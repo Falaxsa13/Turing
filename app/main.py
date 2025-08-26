@@ -1,13 +1,22 @@
 from fastapi import FastAPI
 from app.config import settings
 from app.logging import setup_logging
-from app.routes.setup import router as setup_router
 from app.db import create_tables
-import app.models  # Import models to ensure tables are created
+from app.api import (
+    health_router,
+    setup_router,
+    canvas_router,
+    notion_router,
+    sync_router,
+)
+
+# Import models to ensure they're registered with SQLAlchemy
+import app.models
 
 # Setup logging
 setup_logging()
 
+# Create FastAPI app
 app = FastAPI(
     title="Canvas Sync", description="Synchronize Canvas events with Notion and Google Calendar", version="1.0.0"
 )
@@ -15,18 +24,16 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    """Create database tables on startup"""
+    """Create database tables on startup."""
     create_tables()
 
 
-# Register routers
+# Register API routers
+app.include_router(health_router)
 app.include_router(setup_router)
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "ok"}
+app.include_router(canvas_router)
+app.include_router(notion_router)
+app.include_router(sync_router)
 
 
 if __name__ == "__main__":
