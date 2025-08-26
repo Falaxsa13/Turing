@@ -34,6 +34,15 @@ class NotionEntryRequest(BaseModel):
     entry_data: Dict[str, Any]
 
 
+class CanvasTestRequest(BaseModel):
+    canvas_base_url: str
+    canvas_pat: str
+
+
+class SyncStartRequest(BaseModel):
+    user_email: EmailStr
+
+
 # Response models
 class SetupStatusResponse(BaseModel):
     has_canvas: bool
@@ -123,6 +132,21 @@ async def save_canvas_pat(
         raise HTTPException(status_code=500, detail="Failed to save Canvas PAT")
 
 
+@router.post("/canvas/test")
+async def test_canvas_connection(request: CanvasTestRequest):
+    """Test Canvas API connection with provided credentials"""
+    try:
+        from app.utils.canvas_helper import test_canvas_connection
+
+        result = await test_canvas_connection(request.canvas_base_url, request.canvas_pat)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to test Canvas connection: {e}")
+        raise HTTPException(status_code=400, detail=f"Canvas connection test failed: {str(e)}")
+
+
 @router.post("/notion/test")
 async def test_notion_workspace(request: NotionTestRequest):
     """Test access to your existing 3 Notion databases"""
@@ -151,6 +175,58 @@ async def get_notion_database_schemas(request: NotionTestRequest):
     except Exception as e:
         logger.error(f"Failed to get database schemas: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to retrieve database schemas: {str(e)}")
+
+
+@router.post("/start")
+async def start_canvas_notion_sync(request: SyncStartRequest, db: Session = Depends(get_db)):
+    """🚀 START: Fetch your enrolled Canvas courses and create them in Notion for the current semester"""
+    try:
+        # Get user settings
+        user = db.query(UserSettings).filter(UserSettings.user_email == request.user_email).first()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found. Please run /setup/init first.")
+
+        # Validate required settings
+        if not user.canvas_base_url or not user.canvas_pat:
+            raise HTTPException(
+                status_code=400, detail="Canvas credentials not configured. Please set Canvas base URL and PAT."
+            )
+
+        if not user.notion_token or not user.notion_parent_page_id:
+            raise HTTPException(
+                status_code=400, detail="Notion credentials not configured. Please set Notion token and parent page ID."
+            )
+
+        # Import Canvas helper
+        from app.utils.canvas_helper import sync_canvas_to_notion
+
+        # Perform the sync
+        logger.info(f"Starting Canvas to Notion sync for user: {request.user_email}")
+
+        sync_result = await sync_canvas_to_notion(
+            canvas_base_url=user.canvas_base_url,
+            canvas_token=user.canvas_pat,
+            notion_token=user.notion_token,
+            notion_parent_page_id=user.notion_parent_page_id,
+        )
+
+        # Update last sync time if successful
+        if sync_result.get("success"):
+            setattr(user, "last_canvas_sync", datetime.utcnow())
+            setattr(user, "last_notion_sync", datetime.utcnow())
+            setattr(user, "updated_at", datetime.utcnow())
+            db.commit()
+
+            logger.info(f"Canvas sync completed for user: {request.user_email}")
+
+        return sync_result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to start Canvas sync for {request.user_email}: {e}")
+        raise HTTPException(status_code=500, detail=f"Canvas sync failed: {str(e)}")
 
 
 @router.post("/notion/demo")
@@ -182,7 +258,7 @@ async def add_course_entry(request: NotionEntryRequest):
                 "success": True,
                 "message": "Course entry added successfully",
                 "page_id": result,
-                "note": "TODO: Update course properties in notion_helper.py to match your database structure",
+                "note": "Course created using actual database schema",
             }
         else:
             raise HTTPException(status_code=400, detail="Failed to add course entry")
@@ -206,7 +282,7 @@ async def add_assignment_entry(request: NotionEntryRequest):
                 "success": True,
                 "message": "Assignment entry added successfully",
                 "page_id": result,
-                "note": "TODO: Update assignment properties in notion_helper.py to match your database structure",
+                "note": "Assignment created using actual database schema",
             }
         else:
             raise HTTPException(status_code=400, detail="Failed to add assignment entry")
@@ -230,7 +306,7 @@ async def add_note_entry(request: NotionEntryRequest):
                 "success": True,
                 "message": "Note entry added successfully",
                 "page_id": result,
-                "note": "TODO: Update note properties in notion_helper.py to match your database structure",
+                "note": "Note created using actual database schema",
             }
         else:
             raise HTTPException(status_code=400, detail="Failed to add note entry")

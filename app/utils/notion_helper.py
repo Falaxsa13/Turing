@@ -164,19 +164,36 @@ class NotionWorkspaceManager:
         for prop_name, prop_info in schema.get("properties", {}).items():
             prop_type = prop_info.get("type")
 
-            # Skip if no data provided for this property
-            data_key = prop_name.lower().replace(" ", "_")
-            if data_key not in data and prop_name not in data:
+            # Special handling for title properties - they need the course title
+            if prop_type == "title":
+                # For title fields, always try to use the 'title' field from Canvas data
+                title_value = data.get("title", "")
+                if title_value:
+                    properties[prop_name] = {"title": [{"text": {"content": str(title_value)}}]}
+                    logger.debug(f"Mapped title property '{prop_name}' to '{title_value}'")
                 continue
 
-            value = data.get(data_key) or data.get(prop_name)
+            # Handle other properties with flexible key matching
+            data_key = prop_name.lower().replace(" ", "_")
+
+            # Try multiple key variations to find the data
+            possible_keys = [
+                data_key,  # "course_code" for "Course Code"
+                prop_name,  # "Course Code" exactly
+                prop_name.lower(),  # "course code"
+            ]
+
+            value = None
+            for key in possible_keys:
+                if key in data:
+                    value = data[key]
+                    break
+
             if value is None:
                 continue
 
             # Build property based on type
-            if prop_type == "title":
-                properties[prop_name] = {"title": [{"text": {"content": str(value)}}]}
-            elif prop_type == "rich_text":
+            if prop_type == "rich_text":
                 properties[prop_name] = {"rich_text": [{"text": {"content": str(value)}}]}
             elif prop_type == "number":
                 try:

@@ -6,8 +6,11 @@ class Settings(BaseSettings):
     # App settings
     app_env: str = "dev"
 
-    # Database settings
+    # Database configuration - PostgreSQL for production, SQLite for development
     database_url: str = "postgresql://postgres:postgres@localhost:5432/canvas_sync"
+
+    # Alternative: Use SQLite for local development without PostgreSQL
+    # database_url: str = "sqlite:///./canvas_sync.db"
 
     # Canvas settings (optional for testing)
     canvas_base_url: str = "https://example.instructure.com"
