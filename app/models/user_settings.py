@@ -25,6 +25,7 @@ class UserSettings(Base):
     last_canvas_sync = Column(DateTime, nullable=True)
     last_notion_sync = Column(DateTime, nullable=True)
     last_google_sync = Column(DateTime, nullable=True)
+    last_assignment_sync = Column(DateTime, nullable=True)
 
     # Audit timestamps
     created_at = Column(DateTime, server_default=func.now())

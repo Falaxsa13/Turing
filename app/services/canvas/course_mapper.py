@@ -42,7 +42,9 @@ class CourseMapper:
             "professor": professor,
             "term": term,
             "date": formatted_date,
-            # Add Canvas-specific metadata for reference
+            # Store Canvas course ID in the contact field for reference
+            "contact": f"Canvas ID: {canvas_course.get('id', '')}",
+            # Add Canvas-specific metadata for reference (these won't be stored unless schema supports them)
             "canvas_course_id": str(canvas_course.get("id", "")),
             "canvas_url": canvas_course.get("html_url", ""),
             "canvas_full_name": full_course_name,  # Keep original for reference
@@ -139,3 +141,108 @@ class CourseMapper:
 
         logger.warning(f"No professor found for course {course_title}")
         return ""
+
+
+class AssignmentMapper:
+    """
+    Service for mapping Canvas assignment data to Notion-compatible format.
+    """
+
+    def map_canvas_assignment_to_notion(self, canvas_assignment: Dict, course_notion_id: str) -> Dict[str, Any]:
+        """
+        Map Canvas assignment data to Notion assignment format.
+
+        Args:
+            canvas_assignment: Raw Canvas assignment data
+            course_notion_id: Notion page ID of the course this assignment belongs to
+
+        Returns:
+            Dictionary formatted for Notion assignment creation
+        """
+        # Extract assignment name
+        assignment_name = canvas_assignment.get("name", "Untitled Assignment")
+
+        # Determine assignment type based on Canvas data
+        assignment_type = self._determine_assignment_type(canvas_assignment)
+
+        # Format due date for Notion
+        due_date = self._format_due_date(canvas_assignment.get("due_at"))
+
+        # Extract points possible
+        points_possible = canvas_assignment.get("points_possible", 0)
+        if points_possible is None:
+            points_possible = 0
+
+        # Build Notion assignment data
+        notion_assignment = {
+            "title": assignment_name,
+            "type": assignment_type,
+            "due_date": due_date,
+            "total_score": float(points_possible),
+            # Store Canvas assignment ID in weighting field for duplicate detection
+            "weighting": float(canvas_assignment.get("id", 0)),
+            # Note: raw_score will be empty initially since students haven't submitted yet
+            # Course relation will be set by the sync process
+        }
+
+        # Add Canvas-specific metadata for reference
+        notion_assignment.update(
+            {
+                "canvas_assignment_id": str(canvas_assignment.get("id", "")),
+                "canvas_url": canvas_assignment.get("html_url", ""),
+                "canvas_description": (
+                    canvas_assignment.get("description", "")[:100] if canvas_assignment.get("description") else ""
+                ),  # Truncate description
+            }
+        )
+
+        # Clean up empty fields
+        return {k: v for k, v in notion_assignment.items() if v is not None and v != ""}
+
+    def _determine_assignment_type(self, canvas_assignment: Dict) -> str:
+        """
+        Determine whether this is an Assignment or Exam based on Canvas data.
+
+        Args:
+            canvas_assignment: Canvas assignment data
+
+        Returns:
+            "Assignment" or "Exam"
+        """
+        assignment_name = canvas_assignment.get("name", "").lower()
+        assignment_description = canvas_assignment.get("description") or ""
+        assignment_description = assignment_description.lower()
+
+        # Look for exam/test keywords in name or description
+        exam_keywords = ["exam", "test", "midterm", "final", "quiz"]
+
+        for keyword in exam_keywords:
+            if keyword in assignment_name or keyword in assignment_description:
+                return "Exam"
+
+        # Default to Assignment
+        return "Assignment"
+
+    def _format_due_date(self, due_at_string: str) -> str:
+        """
+        Format Canvas due date for Notion.
+
+        Args:
+            due_at_string: Canvas due_at timestamp string
+
+        Returns:
+            Formatted date string for Notion (YYYY-MM-DD) or empty string
+        """
+        if not due_at_string:
+            return ""
+
+        try:
+            # Canvas returns ISO format: "2024-12-15T23:59:00Z"
+            # Notion expects: "2024-12-15"
+            from datetime import datetime
+
+            due_date = datetime.fromisoformat(due_at_string.replace("Z", "+00:00"))
+            return due_date.strftime("%Y-%m-%d")
+        except Exception as e:
+            logger.warning(f"Failed to format due date '{due_at_string}': {e}")
+            return ""

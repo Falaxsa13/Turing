@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
+from sqlalchemy import Column
+from datetime import datetime, timezone
 from loguru import logger
 
 from app.db import get_db
@@ -27,7 +28,7 @@ async def init_setup(request: InitSetupRequest, db: Session = Depends(get_db)):
             existing_user.canvas_base_url = request.canvas_base_url
             existing_user.notion_token = request.notion_token
             existing_user.notion_parent_page_id = request.notion_parent_page_id
-            existing_user.updated_at = datetime.utcnow()
+            existing_user.updated_at = datetime.now(timezone.utc)
 
             db.commit()
 
@@ -65,7 +66,7 @@ async def save_canvas_pat(request: CanvasPATRequest, user_email: str, db: Sessio
 
         # Update Canvas PAT
         user.canvas_pat = request.canvas_pat
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(timezone.utc)
 
         db.commit()
 
@@ -90,9 +91,9 @@ async def get_setup_status(user_email: str, db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail="User not found. Please run /setup/init first.")
 
         return SetupStatusResponse(
-            has_canvas=bool(user.canvas_base_url and user.canvas_pat),
-            has_notion=bool(user.notion_token and user.notion_parent_page_id),
-            has_google=bool(user.google_credentials),
+            has_canvas=(user.canvas_base_url is not None and user.canvas_pat is not None),
+            has_notion=(user.notion_token is not None and user.notion_parent_page_id is not None),
+            has_google=(user.google_credentials is not None),
             calendar_id=user.google_calendar_id,
             last_canvas_sync=user.last_canvas_sync,
             last_notion_sync=user.last_notion_sync,

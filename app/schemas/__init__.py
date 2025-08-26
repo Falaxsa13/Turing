@@ -24,6 +24,10 @@ from app.schemas.sync import (
     CanvasSyncResponse,
     CourseInspectionInfo,
     CanvasInspectionResponse,
+    SyncAssignmentInfo,
+    SyncFailedAssignment,
+    AssignmentSyncResponse,
+    AssignmentSyncRequest,
 )
 
 __all__ = [
@@ -49,4 +53,9 @@ __all__ = [
     "CanvasSyncResponse",
     "CourseInspectionInfo",
     "CanvasInspectionResponse",
+    # Assignment sync schemas
+    "SyncAssignmentInfo",
+    "SyncFailedAssignment",
+    "AssignmentSyncResponse",
+    "AssignmentSyncRequest",
 ]

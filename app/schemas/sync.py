@@ -24,6 +24,7 @@ class CanvasSyncResponse(BaseModel):
     courses_found: int
     courses_created: int
     courses_failed: int
+    courses_skipped: int
     created_courses: List[SyncCourseInfo]
     failed_courses: List[SyncFailedCourse]
     note: str
@@ -48,3 +49,38 @@ class CanvasInspectionResponse(BaseModel):
     courses_found: int
     courses: List[CourseInspectionInfo]
     note: str
+
+
+# Assignment Sync Models
+class SyncAssignmentInfo(BaseModel):
+    notion_id: str
+    canvas_id: int
+    name: str
+    type: str
+    due_date: Optional[str] = None
+    total_score: float
+    course_title: str
+
+
+class SyncFailedAssignment(BaseModel):
+    canvas_id: int
+    name: str
+    course_title: str
+    error: str
+
+
+class AssignmentSyncResponse(BaseModel):
+    success: bool
+    message: str
+    courses_processed: int
+    assignments_found: int
+    assignments_created: int
+    assignments_failed: int
+    assignments_skipped: int
+    created_assignments: List[SyncAssignmentInfo]
+    failed_assignments: List[SyncFailedAssignment]
+    note: str
+
+
+class AssignmentSyncRequest(BaseModel):
+    user_email: str
