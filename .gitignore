@@ -7,4 +7,6 @@
 .env.production.local
 __pycache__/
 .vscode/
-**.dbfirebase-keys/
+**.db
+/firebase-keys/
+/postgres_data/
