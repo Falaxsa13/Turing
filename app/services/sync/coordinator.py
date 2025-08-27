@@ -2,9 +2,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from loguru import logger
 
-from app.services.canvas import CanvasSyncService
+from app.services.canvas import CanvasSyncService, AssignmentMapper
 from app.utils.notion_helper import NotionWorkspaceManager
-from app.services.canvas.course_mapper import AssignmentMapper
 
 
 class SyncCoordinator:
