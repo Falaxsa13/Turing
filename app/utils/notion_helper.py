@@ -218,10 +218,33 @@ class NotionWorkspaceManager:
             elif prop_type == "phone_number":
                 properties[prop_name] = {"phone_number": str(value)}
             elif prop_type == "relation":
+                # Handle relation properties properly
+                logger.debug(
+                    f"Processing relation property '{prop_name}' with value: {repr(value)} (type: {type(value)})"
+                )
                 if isinstance(value, list):
-                    properties[prop_name] = {"relation": [{"id": str(v)} for v in value]}
+                    # If it's already a list of relation objects, use as-is
+                    if all(isinstance(v, dict) and "id" in v for v in value):
+                        properties[prop_name] = {"relation": value}
+                        logger.debug(f"Using relation objects as-is for '{prop_name}': {value}")
+                    else:
+                        # If it's a list of IDs, convert to relation objects
+                        properties[prop_name] = {"relation": [{"id": str(v)} for v in value]}
+                        logger.debug(
+                            f"Converted ID list to relation objects for '{prop_name}': {properties[prop_name]}"
+                        )
+                elif isinstance(value, dict) and "id" in value:
+                    # If it's already a relation object, wrap in list
+                    properties[prop_name] = {"relation": [value]}
+                    logger.debug(f"Wrapped relation object in list for '{prop_name}': {properties[prop_name]}")
+                elif isinstance(value, str):
+                    # If it's a string ID, create relation object
+                    properties[prop_name] = {"relation": [{"id": value}]}
+                    logger.debug(f"Created relation object from string ID for '{prop_name}': {properties[prop_name]}")
                 else:
+                    # Fallback: convert to string ID
                     properties[prop_name] = {"relation": [{"id": str(value)}]}
+                    logger.debug(f"Fallback string conversion for '{prop_name}': {properties[prop_name]}")
             # Note: formula and rollup properties are computed, so we skip them
 
         return properties
@@ -455,8 +478,12 @@ class NotionWorkspaceManager:
                         weight_value = prop_data.get("number")
                         if weight_value and weight_value > 1000:  # Canvas assignment IDs are typically large numbers
                             canvas_assignment_id = str(int(weight_value))
+                            logger.debug(
+                                f"Found Canvas assignment ID {canvas_assignment_id} in weighting field for assignment: {title}"
+                            )
                             break
 
+                # Only include assignments that have Canvas assignment IDs (for duplicate detection)
                 if canvas_assignment_id:
                     assignments.append(
                         {
@@ -465,6 +492,8 @@ class NotionWorkspaceManager:
                             "title": title,
                         }
                     )
+                else:
+                    logger.debug(f"Assignment '{title}' has no Canvas ID - may be manually created")
 
             logger.info(f"Found {len(assignments)} existing assignments with Canvas IDs")
             return assignments

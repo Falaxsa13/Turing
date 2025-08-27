@@ -6,11 +6,19 @@ class Settings(BaseSettings):
     # App settings
     app_env: str = "dev"
 
-    # Database configuration - PostgreSQL for production, SQLite for development
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/canvas_sync"
+    # Firebase configuration (with defaults for testing)
+    firebase_api_key: str = "dummy_api_key"
+    firebase_auth_domain: str = "dummy-project.firebaseapp.com"
+    firebase_project_id: str = "dummy-project-id"
+    firebase_storage_bucket: str = "dummy-project.appspot.com"
+    firebase_messaging_sender_id: str = "123456789"
+    firebase_app_id: str = "1:123456789:web:abcdef123456789"
+    firebase_measurement_id: str = "G-ABCDEFGHIJ"
 
-    # Alternative: Use SQLite for local development without PostgreSQL
-    # database_url: str = "sqlite:///./canvas_sync.db"
+    # JWT settings for authentication
+    jwt_secret_key: str = "your-secret-key-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24  # 24 hours
 
     # Canvas settings (optional for testing)
     canvas_base_url: str = "https://example.instructure.com"
@@ -31,6 +39,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra fields from .env file
 
 
 # Global settings instance

@@ -173,6 +173,10 @@ class AssignmentMapper:
         if points_possible is None:
             points_possible = 0
 
+        # Get Canvas assignment ID for duplicate detection
+        canvas_assignment_id = canvas_assignment.get("id", 0)
+        logger.debug(f"Mapping assignment '{assignment_name}' with Canvas ID: {canvas_assignment_id}")
+
         # Build Notion assignment data
         notion_assignment = {
             "title": assignment_name,
@@ -180,7 +184,7 @@ class AssignmentMapper:
             "due_date": due_date,
             "total_score": float(points_possible),
             # Store Canvas assignment ID in weighting field for duplicate detection
-            "weighting": float(canvas_assignment.get("id", 0)),
+            "weighting": float(canvas_assignment_id),
             # Note: raw_score will be empty initially since students haven't submitted yet
             # Course relation will be set by the sync process
         }

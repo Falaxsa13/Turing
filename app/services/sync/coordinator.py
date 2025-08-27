@@ -193,8 +193,13 @@ class SyncCoordinator:
 
             # Get existing assignments to check for duplicates
             existing_assignments = await self.notion_manager.get_existing_assignments()
-            existing_canvas_ids = set(assignment["canvas_assignment_id"] for assignment in existing_assignments)
+            existing_canvas_ids = set(
+                assignment["canvas_assignment_id"]
+                for assignment in existing_assignments
+                if assignment.get("canvas_assignment_id")
+            )
             logger.info(f"Found {len(existing_canvas_ids)} existing assignments in Notion")
+            logger.debug(f"Existing Canvas assignment IDs: {list(existing_canvas_ids)[:10]}...")  # Show first 10
 
             total_assignments_found = 0
             total_assignments_created = 0
@@ -210,6 +215,7 @@ class SyncCoordinator:
                 course_title = course["title"]
 
                 logger.info(f"Processing assignments for course: {course_title} (Canvas ID: {canvas_course_id})")
+                logger.debug(f"Notion course ID type: {type(notion_course_id)}, value: {repr(notion_course_id)}")
 
                 try:
                     # Fetch assignments from Canvas for this course
@@ -221,26 +227,31 @@ class SyncCoordinator:
                         logger.info(f"No assignments found for course: {course_title}")
                         continue
 
+                    logger.info(f"Found {len(canvas_assignments)} assignments for course: {course_title}")
                     total_assignments_found += len(canvas_assignments)
-                    logger.info(f"Found {len(canvas_assignments)} assignments for {course_title}")
 
                     # Process each assignment
                     for assignment in canvas_assignments:
                         try:
-                            canvas_assignment_id = str(assignment.get("id", ""))
+                            assignment_id = str(assignment.get("id"))  # Convert to string for comparison
+                            assignment_name = assignment.get("name", "Unnamed Assignment")
 
-                            # Skip if assignment already exists in Notion
-                            if canvas_assignment_id in existing_canvas_ids:
-                                total_assignments_skipped += 1
+                            logger.debug(f"Checking assignment: {assignment_name} (Canvas ID: {assignment_id})")
+
+                            # Check if this assignment already exists (duplicate detection)
+                            if assignment_id in existing_canvas_ids:
                                 logger.info(
-                                    f"Skipping existing assignment: {assignment.get('name')} (Canvas ID: {canvas_assignment_id})"
+                                    f"Skipping duplicate assignment: {assignment_name} (Canvas ID: {assignment_id})"
                                 )
+                                total_assignments_skipped += 1
                                 continue
 
                             # Map Canvas assignment to Notion format
                             notion_assignment = self.assignment_mapper.map_canvas_assignment_to_notion(
                                 assignment, notion_course_id
                             )
+
+                            logger.debug(f"About to create assignment with course ID: {repr(notion_course_id)}")
 
                             # Create assignment in Notion
                             notion_assignment_id = await self._create_assignment_in_notion(
@@ -249,44 +260,48 @@ class SyncCoordinator:
 
                             if notion_assignment_id:
                                 total_assignments_created += 1
+                                # Build response matching SyncAssignmentInfo schema
                                 created_assignments.append(
                                     {
                                         "notion_id": notion_assignment_id,
-                                        "canvas_id": assignment.get("id"),
-                                        "name": assignment.get("name", "Untitled Assignment"),
+                                        "canvas_id": int(assignment_id),
+                                        "name": assignment_name,
                                         "type": notion_assignment.get("type", "Assignment"),
                                         "due_date": notion_assignment.get("due_date"),
-                                        "total_score": notion_assignment.get("total_score", 0),
+                                        "total_score": float(notion_assignment.get("total_score", 0)),
                                         "course_title": course_title,
                                     }
                                 )
-                                logger.info(f"Created assignment: {assignment.get('name')} in Notion")
+                                logger.info(f"✅ Created assignment: {assignment_name}")
                             else:
                                 total_assignments_failed += 1
                                 failed_assignments.append(
                                     {
-                                        "canvas_id": assignment.get("id"),
-                                        "name": assignment.get("name", "Untitled Assignment"),
+                                        "canvas_id": int(assignment_id),
+                                        "name": assignment_name,
                                         "course_title": course_title,
                                         "error": "Failed to create in Notion",
                                     }
                                 )
+                                logger.error(f"❌ Failed to create assignment: {assignment_name}")
 
                         except Exception as e:
                             total_assignments_failed += 1
+                            assignment_name = assignment.get("name", "Unknown Assignment")
+                            assignment_id = assignment.get("id", 0)
                             failed_assignments.append(
                                 {
-                                    "canvas_id": assignment.get("id"),
-                                    "name": assignment.get("name", "Untitled Assignment"),
+                                    "canvas_id": int(assignment_id) if assignment_id else 0,
+                                    "name": assignment_name,
                                     "course_title": course_title,
                                     "error": str(e),
                                 }
                             )
-                            logger.error(f"Failed to process assignment {assignment.get('name')}: {e}")
+                            logger.error(f"❌ Error processing assignment {assignment_name}: {e}")
 
                 except Exception as e:
-                    logger.error(f"Failed to process course {course_title}: {e}")
-                    # Continue with next course
+                    logger.error(f"Failed to process assignments for course {course_title}: {e}")
+                    # Continue processing other courses
 
             # Prepare final response
             success = total_assignments_created > 0 or total_assignments_found == total_assignments_skipped
@@ -359,7 +374,33 @@ class SyncCoordinator:
                     break
 
             if relation_field_name:
-                assignment_with_relation[relation_field_name] = [{"id": course_notion_id}]
+                # Clean up course_notion_id - ensure it's just the UUID string
+                clean_course_id = course_notion_id
+
+                # Handle case where course_notion_id might be a string representation of a dict
+                if isinstance(course_notion_id, str) and course_notion_id.startswith("{'id':"):
+                    # Extract the UUID from string like "{'id': 'uuid-here'}"
+                    try:
+                        import ast
+
+                        parsed = ast.literal_eval(course_notion_id)
+                        if isinstance(parsed, dict) and "id" in parsed:
+                            clean_course_id = parsed["id"]
+                            logger.info(f"Extracted UUID from dict string: {clean_course_id}")
+                    except:
+                        # If parsing fails, try to extract with regex
+                        import re
+
+                        match = re.search(r"'id':\s*'([^']+)'", course_notion_id)
+                        if match:
+                            clean_course_id = match.group(1)
+                            logger.info(f"Extracted UUID with regex: {clean_course_id}")
+
+                # Remove any extra quotes or whitespace
+                clean_course_id = clean_course_id.strip().strip('"').strip("'")
+
+                logger.info(f"Setting course relation: {relation_field_name} = {clean_course_id}")
+                assignment_with_relation[relation_field_name] = [{"id": clean_course_id}]
                 logger.info(f"Added course relation using field: {relation_field_name}")
 
             # Create assignment in Notion

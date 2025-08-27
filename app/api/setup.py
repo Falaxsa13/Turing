@@ -1,11 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import Column
+from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime, timezone
 from loguru import logger
 
-from app.db import get_db
-from app.models import UserSettings
+from app.firebase import get_firebase_db
+from app.auth import get_current_user_email
 from app.schemas import (
     InitSetupRequest,
     CanvasPATRequest,
@@ -17,91 +15,160 @@ router = APIRouter(prefix="/setup", tags=["setup"])
 
 
 @router.post("/init", response_model=SetupResponse)
-async def init_setup(request: InitSetupRequest, db: Session = Depends(get_db)):
-    """Initialize user setup with Canvas and Notion credentials."""
+async def init_setup(request: InitSetupRequest, firebase_db=Depends(get_firebase_db)):
+    """🚀 Initialize user setup with Canvas and Notion credentials."""
     try:
+        user_email = request.user_email
+
+        # Prepare user settings data
+        now = datetime.now(timezone.utc)
+        user_data = {
+            "canvas_base_url": request.canvas_base_url,
+            "notion_token": request.notion_token,
+            "notion_parent_page_id": request.notion_parent_page_id,
+            "updated_at": now,
+        }
+
         # Check if user already exists
-        existing_user = db.query(UserSettings).filter(UserSettings.user_email == request.user_email).first()
-
-        if existing_user:
-            # Update existing user
-            existing_user.canvas_base_url = request.canvas_base_url
-            existing_user.notion_token = request.notion_token
-            existing_user.notion_parent_page_id = request.notion_parent_page_id
-            existing_user.updated_at = datetime.now(timezone.utc)
-
-            db.commit()
-
-            logger.info(f"Updated settings for user: {request.user_email}")
-            return SetupResponse(message="User settings updated successfully", user_email=request.user_email)
+        existing_user = await firebase_db.get_user_settings(user_email)
+        if not existing_user:
+            user_data["created_at"] = now
+            logger.info(f"Creating new user: {user_email}")
         else:
-            # Create new user
-            new_user = UserSettings(
-                user_email=request.user_email,
-                canvas_base_url=request.canvas_base_url,
-                notion_token=request.notion_token,
-                notion_parent_page_id=request.notion_parent_page_id,
-            )
+            logger.info(f"Updating existing user: {user_email}")
 
-            db.add(new_user)
-            db.commit()
+        # Create or update user settings
+        success = await firebase_db.create_or_update_user_settings(user_email, user_data)
 
-            logger.info(f"Created new user: {request.user_email}")
-            return SetupResponse(message="User settings created successfully", user_email=request.user_email)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to save user settings")
 
-    except Exception as e:
-        logger.error(f"Failed to init setup for {request.user_email}: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Setup initialization failed: {str(e)}")
+        # Log the setup action
+        await firebase_db.add_audit_log(
+            user_email=user_email,
+            action="setup_init",
+            target_id=user_email,
+            metadata={
+                "canvas_base_url": request.canvas_base_url,
+                "has_notion_token": bool(request.notion_token),
+                "has_notion_parent_page": bool(request.notion_parent_page_id),
+            },
+        )
 
+        logger.info(f"Setup initialized for user: {user_email}")
 
-@router.post("/canvas/pat")
-async def save_canvas_pat(request: CanvasPATRequest, user_email: str, db: Session = Depends(get_db)):
-    """Save Canvas Personal Access Token for a user."""
-    try:
-        user = db.query(UserSettings).filter(UserSettings.user_email == user_email).first()
-
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found. Please run /setup/init first.")
-
-        # Update Canvas PAT
-        user.canvas_pat = request.canvas_pat
-        user.updated_at = datetime.now(timezone.utc)
-
-        db.commit()
-
-        logger.info(f"Updated Canvas PAT for user: {user_email}")
-        return {"message": "Canvas Personal Access Token saved successfully", "user_email": user_email}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to save Canvas PAT for {user_email}: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to save Canvas PAT: {str(e)}")
-
-
-@router.get("/me", response_model=SetupStatusResponse)
-async def get_setup_status(user_email: str, db: Session = Depends(get_db)):
-    """Get current setup status for a user."""
-    try:
-        user = db.query(UserSettings).filter(UserSettings.user_email == user_email).first()
-
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found. Please run /setup/init first.")
-
-        return SetupStatusResponse(
-            has_canvas=(user.canvas_base_url is not None and user.canvas_pat is not None),
-            has_notion=(user.notion_token is not None and user.notion_parent_page_id is not None),
-            has_google=(user.google_credentials is not None),
-            calendar_id=user.google_calendar_id,
-            last_canvas_sync=user.last_canvas_sync,
-            last_notion_sync=user.last_notion_sync,
-            last_google_sync=user.last_google_sync,
+        return SetupResponse(
+            success=True,
+            message="Setup initialized successfully",
+            user_email=user_email,
+            next_step="Save your Canvas Personal Access Token using /setup/canvas/pat",
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get setup status for {user_email}: {e}")
+        logger.error(f"Setup initialization failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Setup initialization failed: {str(e)}")
+
+
+@router.post("/canvas/pat")
+async def save_canvas_pat(request: CanvasPATRequest, user_email: str, firebase_db=Depends(get_firebase_db)):
+    """🔑 Save Canvas Personal Access Token for the user."""
+    try:
+        # Get existing user settings
+        user_settings = await firebase_db.get_user_settings(user_email)
+        if not user_settings:
+            raise HTTPException(status_code=404, detail="User not found. Please run /setup/init first.")
+
+        # Update Canvas PAT
+        user_data = {
+            "canvas_pat": request.canvas_pat,
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+        success = await firebase_db.create_or_update_user_settings(user_email, user_data)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to save Canvas PAT")
+
+        # Log the action
+        await firebase_db.add_audit_log(
+            user_email=user_email, action="canvas_pat_saved", target_id=user_email, metadata={"has_canvas_pat": True}
+        )
+
+        logger.info(f"Canvas PAT saved for user: {user_email}")
+
+        return {
+            "success": True,
+            "message": "Canvas PAT saved successfully",
+            "next_step": "Test your Canvas connection using /canvas/test",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to save Canvas PAT: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save Canvas PAT: {str(e)}")
+
+
+@router.get("/me", response_model=SetupStatusResponse)
+async def get_setup_status(user_email: str, firebase_db=Depends(get_firebase_db)):
+    """📊 Get setup status for the user."""
+    try:
+        # Get user settings
+        user_settings = await firebase_db.get_user_settings(user_email)
+
+        if not user_settings:
+            # Return default status for new user
+            return SetupStatusResponse(
+                user_email=user_email,
+                has_canvas=False,
+                has_notion=False,
+                has_google=False,
+                last_canvas_sync=None,
+                last_notion_sync=None,
+                last_google_sync=None,
+                last_assignment_sync=None,
+                setup_complete=False,
+                next_steps=[
+                    "Run /setup/init to initialize your account",
+                    "Save Canvas credentials",
+                    "Test Canvas connection",
+                    "Start syncing with /sync/start",
+                ],
+            )
+
+        # Check what's configured
+        has_canvas = bool(user_settings.get("canvas_base_url") and user_settings.get("canvas_pat"))
+        has_notion = bool(user_settings.get("notion_token") and user_settings.get("notion_parent_page_id"))
+        has_google = bool(user_settings.get("google_credentials"))
+
+        setup_complete = has_canvas and has_notion
+
+        # Determine next steps
+        next_steps = []
+        if not has_canvas:
+            next_steps.append("Save Canvas credentials using /setup/canvas/pat")
+        if not has_notion:
+            next_steps.append("Configure Notion workspace using /setup/init")
+        if setup_complete:
+            next_steps.append("Start syncing with /sync/start")
+
+        return SetupStatusResponse(
+            user_email=user_email,
+            has_canvas=has_canvas,
+            has_notion=has_notion,
+            has_google=has_google,
+            last_canvas_sync=user_settings.get("last_canvas_sync"),
+            last_notion_sync=user_settings.get("last_notion_sync"),
+            last_google_sync=user_settings.get("last_google_sync"),
+            last_assignment_sync=user_settings.get("last_assignment_sync"),
+            setup_complete=setup_complete,
+            next_steps=next_steps,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get setup status: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get setup status: {str(e)}")
