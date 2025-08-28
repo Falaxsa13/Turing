@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Union
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # Response Models
@@ -140,7 +140,7 @@ class SyncLog(BaseModel):
     duration_ms: Optional[int] = Field(description="Duration of the sync in milliseconds", default=0)
     error_message: Optional[str] = Field(description="Error message if the sync failed", default="")
     metadata: Dict[str, Any] = Field(description="Metadata about the sync")
-    timestamp: str = Field(description="Timestamp of the sync")
+    timestamp: datetime = Field(description="Timestamp of the sync", default=datetime.now(timezone.utc))
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat() if v else None}

@@ -26,8 +26,10 @@ class SyncStartRequest(BaseModel):
 
 # Response Models
 class SetupResponse(BaseModel):
+    success: bool
     message: str
     user_email: str
+    next_step: str
 
 
 class SetupStatusResponse(BaseModel):
