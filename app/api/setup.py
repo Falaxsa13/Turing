@@ -1,15 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends
-from datetime import datetime, timezone
-from loguru import logger
+"""
+Setup and configuration API endpoints for the Turing Project.
+"""
 
-from app.firebase import get_firebase_db
+import logging
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
 from app.auth import get_current_user_email
-from app.schemas import (
-    InitSetupRequest,
-    CanvasPATRequest,
-    SetupResponse,
-    SetupStatusResponse,
-)
+from app.core.exceptions import DatabaseError, ExternalServiceError, ValidationError
+from app.core.responses import error_response, success_response
+from app.firebase import get_firebase_db
+from app.schemas.setup import CanvasPATRequest, InitSetupRequest, SetupResponse, SetupStatusResponse
+
+# Module-level logger (industry standard)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
@@ -41,7 +46,7 @@ async def init_setup(request: InitSetupRequest, firebase_db=Depends(get_firebase
         success = await firebase_db.create_or_update_user_settings(user_email, user_data)
 
         if not success:
-            raise HTTPException(status_code=500, detail="Failed to save user settings")
+            raise DatabaseError("Failed to save user settings", operation="save_user", collection="user_settings")
 
         # Log the setup action
         await firebase_db.add_audit_log(
@@ -64,11 +69,11 @@ async def init_setup(request: InitSetupRequest, firebase_db=Depends(get_firebase
             next_step="Save your Canvas Personal Access Token using /setup/canvas/pat",
         )
 
-    except HTTPException:
-        raise
+    except DatabaseError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Setup initialization failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Setup initialization failed: {str(e)}")
+        raise ExternalServiceError(message=f"Setup initialization failed: {str(e)}", service="setup", status_code=500)
 
 
 @router.post("/canvas/pat")
@@ -78,7 +83,9 @@ async def save_canvas_pat(request: CanvasPATRequest, user_email: str, firebase_d
         # Get existing user settings
         user_settings = await firebase_db.get_user_settings(user_email)
         if not user_settings:
-            raise HTTPException(status_code=404, detail="User not found. Please run /setup/init first.")
+            raise DatabaseError(
+                "User not found. Please run /setup/init first.", operation="get_user", collection="user_settings"
+            )
 
         # Update Canvas PAT
         user_data = {
@@ -89,7 +96,7 @@ async def save_canvas_pat(request: CanvasPATRequest, user_email: str, firebase_d
         success = await firebase_db.create_or_update_user_settings(user_email, user_data)
 
         if not success:
-            raise HTTPException(status_code=500, detail="Failed to save Canvas PAT")
+            raise DatabaseError("Failed to save Canvas PAT", operation="save_canvas_pat", collection="user_settings")
 
         # Log the action
         await firebase_db.add_audit_log(
@@ -104,11 +111,11 @@ async def save_canvas_pat(request: CanvasPATRequest, user_email: str, firebase_d
             "next_step": "Test your Canvas connection using /canvas/test",
         }
 
-    except HTTPException:
-        raise
+    except DatabaseError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to save Canvas PAT: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to save Canvas PAT: {str(e)}")
+        raise ExternalServiceError(message=f"Failed to save Canvas PAT: {str(e)}", service="setup", status_code=500)
 
 
 @router.get("/me", response_model=SetupStatusResponse)

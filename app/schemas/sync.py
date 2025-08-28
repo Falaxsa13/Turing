@@ -1,5 +1,6 @@
-from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional, Union
+from datetime import datetime
 
 
 # Response Models
@@ -84,3 +85,113 @@ class AssignmentSyncResponse(BaseModel):
 
 class AssignmentSyncRequest(BaseModel):
     user_email: str
+
+
+# Sync Status Models - Updated to match actual data structure
+class NotionCourseInfo(BaseModel):
+    # Handle both field naming conventions from different sources
+    notion_id: Optional[str] = None
+    notion_page_id: Optional[str] = None
+    canvas_id: Optional[Union[int, str]] = None
+    canvas_course_id: Optional[str] = None
+    name: Optional[str] = None
+    title: Optional[str] = None
+    course_code: Optional[str] = None
+    term: Optional[str] = None
+    professor: Optional[str] = None
+
+
+class NotionAssignmentInfo(BaseModel):
+    # Handle both field naming conventions from different sources
+    notion_id: str = Field(description="Notion ID of the course")
+    notion_page_id: str = Field(description="Notion page ID of the course")
+    canvas_id: Optional[Union[int, str]] = Field(description="Canvas ID of the course")
+    canvas_assignment_id: Optional[str] = Field(description="Canvas assignment ID of the course")
+    name: Optional[str] = Field(description="Name of the course")
+    title: Optional[str] = Field(description="Title of the course")
+
+
+class SetupStatus(BaseModel):
+    has_canvas: bool = Field(description="Whether the user has a Canvas account")
+    has_notion: bool = Field(description="Whether the user has a Notion account")
+
+
+class SyncHistory(BaseModel):
+    last_course_sync: Optional[str] = Field(description="Last course sync timestamp")
+    last_assignment_sync: Optional[str] = Field(description="Last assignment sync timestamp")
+
+
+class SyncData(BaseModel):
+    courses_synced: int = Field(description="Number of courses synced")
+    assignments_synced: int = Field(description="Number of assignments synced")
+
+
+class SyncLog(BaseModel):
+    id: str = Field(description="ID of the sync log")
+    user_email: str = Field(description="User email")
+    sync_type: str = Field(description="Type of sync (courses or assignments)")
+    status: str = Field(description="Status of the sync (success, failed, partial)")
+
+    items_processed: int = Field(description="Number of items processed", default=0)
+    items_created: int = Field(description="Number of items created", default=0)
+    items_failed: int = Field(description="Number of items failed", default=0)
+    items_skipped: int = Field(description="Number of items skipped", default=0)
+
+    duration_ms: Optional[int] = Field(description="Duration of the sync in milliseconds", default=0)
+    error_message: Optional[str] = Field(description="Error message if the sync failed", default="")
+    metadata: Dict[str, Any] = Field(description="Metadata about the sync")
+    timestamp: str = Field(description="Timestamp of the sync")
+
+    class Config:
+        json_encoders = {datetime: lambda v: v.isoformat() if v else None}
+
+
+class SyncStatusResponse(BaseModel):
+    success: bool = Field(description="Whether the operation was successful")
+    message: str = Field(description="Human-readable message about the operation")
+    user_email: str = Field(description="User email ")
+    setup_status: SetupStatus = Field(description="User setup completion status")
+    sync_history: SyncHistory = Field(description="Sync history")
+    sync_data: SyncData = Field(description="Sync data")
+    courses: List[NotionCourseInfo] = Field(
+        description="Synced courses, most likely only contains notion_page_id, canvas_course_id, title and course_code "
+    )
+    assignments: List[NotionAssignmentInfo] = Field(
+        description="Synced assignments, most likely only contains notion_page_id, canvas_assignment_id, title"
+    )
+    recent_sync_logs: List[SyncLog] = Field(description="Recent sync logs")
+    note: str = Field(description="Additional information about the response")
+
+
+# Specific Response Models for Individual Endpoints
+class SyncedCoursesResponse(BaseModel):
+    success: bool
+    message: str
+    courses_count: int
+    courses: List[NotionCourseInfo]
+    note: str
+
+
+class SyncedAssignmentsResponse(BaseModel):
+    success: bool
+    message: str
+    assignments_count: int
+    assignments: List[NotionAssignmentInfo]
+    note: str
+
+
+# Sync Log Models
+class SyncLogResponse(BaseModel):
+    success: bool
+    message: str
+    logs_count: int
+    logs: List[Dict[str, Any]]
+    note: str
+
+
+class AuditLogResponse(BaseModel):
+    success: bool
+    message: str
+    logs_count: int
+    logs: List[Dict[str, Any]]
+    note: str

@@ -285,7 +285,7 @@ class CanvasSyncService:
             "start_at": course.get("start_at"),
             "end_at": course.get("end_at"),
             "teachers": teachers,
-            "teacher_names": [teacher.get("display_name", "") for teacher in teachers],
+            "teacher_names": [teacher.get("short_name", "") for teacher in teachers],
             "total_students": course.get("total_students"),
             "term": course.get("term"),
             # Our parsed version

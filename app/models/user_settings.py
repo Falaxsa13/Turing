@@ -50,26 +50,6 @@ class UserPreferences(BaseModel):
     assignments_per_page: int = 50
 
 
-class SyncLog(BaseModel):
-    """Sync log model for Firebase Firestore"""
-
-    id: Optional[str] = None
-    user_email: EmailStr
-    sync_type: str  # "courses", "assignments", "canvas_test", "notion_test"
-    status: str  # "success", "failed", "partial"
-    items_processed: int = 0
-    items_created: int = 0
-    items_failed: int = 0
-    items_skipped: int = 0
-    duration_ms: Optional[int] = None
-    error_message: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-    timestamp: Optional[datetime] = None
-
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat() if v else None}
-
-
 class AuditLog(BaseModel):
     """Audit log model for Firebase Firestore"""
 

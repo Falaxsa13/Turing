@@ -31,6 +31,7 @@ class SetupResponse(BaseModel):
 
 
 class SetupStatusResponse(BaseModel):
+    user_email: str
     has_canvas: bool
     has_notion: bool
     has_google: bool
@@ -38,6 +39,9 @@ class SetupStatusResponse(BaseModel):
     last_canvas_sync: Optional[datetime] = None
     last_notion_sync: Optional[datetime] = None
     last_google_sync: Optional[datetime] = None
+    last_assignment_sync: Optional[datetime] = None
+    setup_complete: bool
+    next_steps: list[str]
 
 
 class CanvasTestResponse(BaseModel):

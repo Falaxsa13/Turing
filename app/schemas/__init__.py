@@ -30,6 +30,12 @@ from app.schemas.sync import (
     AssignmentSyncRequest,
 )
 
+from app.schemas.auth import (
+    FirebaseLoginRequest,
+    LoginResponse,
+    LogoutRequest,
+)
+
 __all__ = [
     # Setup schemas
     "InitSetupRequest",
@@ -58,4 +64,8 @@ __all__ = [
     "SyncFailedAssignment",
     "AssignmentSyncResponse",
     "AssignmentSyncRequest",
+    # Auth schemas
+    "FirebaseLoginRequest",
+    "LoginResponse",
+    "LogoutRequest",
 ]

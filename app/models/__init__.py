@@ -1,3 +1,11 @@
-from app.models.user_settings import UserSettings
+"""
+Models module for the Turing Project application.
+"""
 
-__all__ = ["UserSettings"]
+from .user import User, UserProfile, AuthenticatedUser
+
+__all__ = [
+    "User",
+    "UserProfile",
+    "AuthenticatedUser",
+]

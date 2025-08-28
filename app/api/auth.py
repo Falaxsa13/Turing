@@ -1,105 +1,85 @@
-"""
-Authentication API endpoints for Firebase authentication with Google login.
-"""
-
 from fastapi import APIRouter, HTTPException, Depends, status
-from pydantic import BaseModel
-from app.auth import authenticate_user_with_firebase, get_current_user, get_current_user_email
+from app.auth import authenticate_user_with_firebase, get_current_user
 from app.firebase import get_firebase_db
-from loguru import logger
-from typing import Optional
+from app.core.exceptions import AuthenticationError, ExternalServiceError
+from app.schemas.auth import (
+    FirebaseConfigResponse,
+    FirebaseKeys,
+    FirebaseLoginRequest,
+    LoginResponse,
+    LogoutRequest,
+    LogoutResponse,
+)
+from app.models.user import AuthenticatedUser, UserProfile
+from datetime import datetime, timezone
+from app.config import settings
+import logging
+import asyncio
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["authentication"])
-
-
-class FirebaseLoginRequest(BaseModel):
-    """Request model for Firebase authentication"""
-
-    id_token: str  # Firebase ID token from client
-
-
-class LoginResponse(BaseModel):
-    """Response model for successful authentication"""
-
-    success: bool
-    message: str
-    user_email: str
-    user_id: str
-    display_name: Optional[str] = None
-    photo_url: Optional[str] = None
-    access_token: str
-    token_type: str
-    expires_in: int
-
-
-class LogoutRequest(BaseModel):
-    """Request model for logout"""
-
-    revoke_token: bool = False
 
 
 @router.post("/login", response_model=LoginResponse)
 async def login_with_firebase(request: FirebaseLoginRequest, firebase_db=Depends(get_firebase_db)):
     """
-    🔑 Authenticate user with Firebase ID token (Google OAuth).
+    Authenticate user with Firebase ID token (Google OAuth).
 
     This endpoint receives a Firebase ID token from the frontend (after Google OAuth),
     verifies it, and returns a JWT token for subsequent API calls.
     """
     try:
         # Authenticate with Firebase
-        auth_result = await authenticate_user_with_firebase(request.id_token, firebase_db)
+        auth = await authenticate_user_with_firebase(request.id_token, firebase_db)
 
-        if not auth_result:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Firebase authentication failed")
+        if not auth:
+            raise AuthenticationError("Firebase authentication failed", user_id=None)
 
-        logger.info(f"User logged in successfully: {auth_result['user_email']}")
+        logger.info("User logged in successfully", extra={"user_email": auth.get("user_email")})
 
         return LoginResponse(
+            **auth,
             success=True,
             message="Authentication successful",
-            user_email=auth_result["user_email"],
-            user_id=auth_result["user_id"],
-            display_name=auth_result.get("display_name"),
-            photo_url=auth_result.get("photo_url"),
-            access_token=auth_result["access_token"],
-            token_type=auth_result["token_type"],
-            expires_in=auth_result["expires_in"],
         )
 
-    except HTTPException:
-        raise
+    except AuthenticationError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message)
     except Exception as e:
         logger.error(f"Login failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Login failed due to server error"
+        raise ExternalServiceError(
+            message="Login failed due to server error", service="authentication", status_code=500
         )
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=LogoutResponse)
 async def logout(
-    request: LogoutRequest, current_user: dict = Depends(get_current_user), firebase_db=Depends(get_firebase_db)
+    request: LogoutRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    firebase_db=Depends(get_firebase_db),
 ):
     """
-    🚪 Logout current user.
-
-    Logs the logout action for audit purposes.
-    Note: JWT tokens are stateless, so logout is mainly for logging purposes.
-    Frontend should delete the token to effectively log out.
+    Log a logout action (tokens are stateless; frontend should delete it).
     """
     try:
-        user_email = current_user["user_email"]
-        user_id = current_user["user_id"]
-
         # Log logout action
         await firebase_db.add_audit_log(
-            user_email=user_email, action="logout", target_id=user_id, metadata={"revoke_token": request.revoke_token}
+            user_email=current_user.user_email,
+            action="logout",
+            target_id=current_user.user_id,
+            metadata={"revoke_token": request.revoke_token},
         )
 
-        logger.info(f"User logged out: {user_email}")
+        logger.info("User logged out", extra={"user_email": current_user.user_email})
 
-        return {"success": True, "message": "Logout successful", "note": "Frontend should delete the access token"}
+        return LogoutResponse(
+            success=True,
+            message="Logout successful",
+            user_email=current_user.user_email,
+            logout_timestamp=datetime.now(timezone.utc).isoformat(),
+            note="Frontend should delete the access token to complete logout",
+        )
 
     except Exception as e:
         logger.error(f"Logout failed: {e}")
@@ -108,63 +88,59 @@ async def logout(
         )
 
 
-@router.get("/me")
-async def get_current_user_info(current_user: dict = Depends(get_current_user), firebase_db=Depends(get_firebase_db)):
+@router.get("/me", response_model=UserProfile)
+async def get_current_user_info(
+    current_user: AuthenticatedUser = Depends(get_current_user), firebase_db=Depends(get_firebase_db)
+):
     """
-    👤 Get current authenticated user information.
+    Get current authenticated user information.
+    """
 
-    Returns user profile and preferences.
-    """
     try:
-        user_email = current_user["user_email"]
+        user_email = current_user.user_email
 
-        # Get user settings
-        user_settings = await firebase_db.get_user_settings(user_email)
+        user_settings, user_preferences = await asyncio.gather(
+            firebase_db.get_user_settings(user_email),
+            firebase_db.get_user_preferences(user_email),
+        )
 
-        # Get user preferences
-        user_preferences = await firebase_db.get_user_preferences(user_email)
+        def _has(cfg: dict | None, *keys: str) -> bool:
+            return bool(cfg and all(cfg.get(k) for k in keys))
 
-        return {
-            "success": True,
-            "user_email": user_email,
-            "user_id": current_user.get("user_id"),
-            "display_name": current_user.get("display_name"),
-            "photo_url": current_user.get("photo_url"),
-            "settings": user_settings,
-            "preferences": user_preferences,
-            "setup_status": {
-                "has_canvas": bool(
-                    user_settings and user_settings.get("canvas_base_url") and user_settings.get("canvas_pat")
-                ),
-                "has_notion": bool(
-                    user_settings and user_settings.get("notion_token") and user_settings.get("notion_parent_page_id")
-                ),
-                "has_google": bool(user_settings and user_settings.get("google_credentials")),
-            },
+        setup_status = {
+            "has_canvas": _has(user_settings, "canvas_base_url", "canvas_pat"),
+            "has_notion": _has(user_settings, "notion_token", "notion_parent_page_id"),
+            "has_google": _has(user_settings, "google_credentials"),
         }
+
+        return UserProfile(
+            user_email=user_email,
+            user_id=current_user.user_id,
+            display_name=current_user.display_name,
+            photo_url=current_user.photo_url,
+            settings=user_settings,
+            preferences=user_preferences,
+            setup_status=setup_status,
+        )
 
     except Exception as e:
         logger.error(f"Failed to get user info: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get user information")
 
 
-@router.get("/firebase-config")
+@router.get("/firebase-config", response_model=FirebaseConfigResponse)
 async def get_firebase_config():
     """
-    🔧 Get Firebase configuration for frontend.
-
-    Returns public Firebase configuration needed for frontend authentication.
+    Public Firebase configuration for frontend auth.
     """
-    from app.config import settings
-
-    return {
-        "firebase": {
-            "apiKey": settings.firebase_api_key,
-            "authDomain": settings.firebase_auth_domain,
-            "projectId": settings.firebase_project_id,
-            "storageBucket": settings.firebase_storage_bucket,
-            "messagingSenderId": settings.firebase_messaging_sender_id,
-            "appId": settings.firebase_app_id,
-            "measurementId": settings.firebase_measurement_id,
-        }
-    }
+    return FirebaseConfigResponse(
+        firebase=FirebaseKeys(
+            apiKey=settings.firebase_api_key,
+            authDomain=settings.firebase_auth_domain,
+            projectId=settings.firebase_project_id,
+            storageBucket=settings.firebase_storage_bucket,
+            messagingSenderId=settings.firebase_messaging_sender_id,
+            appId=settings.firebase_app_id,
+            measurementId=settings.firebase_measurement_id,
+        )
+    )

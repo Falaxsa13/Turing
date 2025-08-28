@@ -10,6 +10,7 @@ from loguru import logger
 
 from .manager import FirebaseManager
 from .constants import USER_SETTINGS_COLLECTION, USER_PREFERENCES_COLLECTION
+from app.models.user_settings import UserSettings
 
 
 class FirebaseUserService:

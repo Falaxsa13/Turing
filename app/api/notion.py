@@ -1,13 +1,22 @@
-from fastapi import APIRouter, HTTPException
-from loguru import logger
+"""
+Notion API endpoints for course management and synchronization.
+"""
 
-from app.schemas import (
+from fastapi import APIRouter, Depends, HTTPException, status
+from app.firebase import get_firebase_db
+from app.core.exceptions import ExternalServiceError, ValidationError
+from app.core.responses import success_response, error_response
+from app.schemas.notion import (
     NotionTestRequest,
     NotionEntryRequest,
     NotionWorkspaceResponse,
     NotionSchemaResponse,
     NotionEntryResponse,
 )
+import logging
+
+# Module-level logger (industry standard)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/notion", tags=["notion"])
 
@@ -29,7 +38,9 @@ async def test_notion_workspace(request: NotionTestRequest):
         )
     except Exception as e:
         logger.error(f"Failed to test Notion workspace: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to access Notion workspace: {str(e)}")
+        raise ExternalServiceError(
+            message=f"Failed to access Notion workspace: {str(e)}", service="notion", status_code=400
+        )
 
 
 @router.post("/schemas", response_model=NotionSchemaResponse)
@@ -49,7 +60,9 @@ async def get_notion_database_schemas(request: NotionTestRequest):
 
     except Exception as e:
         logger.error(f"Failed to get database schemas: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to retrieve database schemas: {str(e)}")
+        raise ExternalServiceError(
+            message=f"Failed to retrieve database schemas: {str(e)}", service="notion", status_code=400
+        )
 
 
 @router.post("/demo")
@@ -62,7 +75,7 @@ async def demo_notion_entries(request: NotionTestRequest):
         return result
     except Exception as e:
         logger.error(f"Failed to add demo entries: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to add demo entries: {str(e)}")
+        raise ExternalServiceError(message=f"Failed to add demo entries: {str(e)}", service="notion", status_code=500)
 
 
 @router.post("/add-course", response_model=NotionEntryResponse)
@@ -82,11 +95,13 @@ async def add_course_entry(request: NotionEntryRequest):
                 note="Course created using actual database schema",
             )
         else:
-            raise HTTPException(status_code=400, detail="Failed to add course entry")
+            raise ValidationError("Failed to add course entry", field="entry_data")
 
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to add course entry: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to add course: {str(e)}")
+        raise ExternalServiceError(message=f"Failed to add course: {str(e)}", service="notion", status_code=500)
 
 
 @router.post("/add-assignment", response_model=NotionEntryResponse)
@@ -106,11 +121,13 @@ async def add_assignment_entry(request: NotionEntryRequest):
                 note="Assignment created using actual database schema",
             )
         else:
-            raise HTTPException(status_code=400, detail="Failed to add assignment entry")
+            raise ValidationError("Failed to add assignment entry", field="entry_data")
 
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to add assignment entry: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to add assignment: {str(e)}")
+        raise ExternalServiceError(message=f"Failed to add assignment: {str(e)}", service="notion", status_code=500)
 
 
 @router.post("/add-note", response_model=NotionEntryResponse)
@@ -130,11 +147,13 @@ async def add_note_entry(request: NotionEntryRequest):
                 note="Note created using actual database schema",
             )
         else:
-            raise HTTPException(status_code=400, detail="Failed to add note entry")
+            raise ValidationError("Failed to add note entry", field="entry_data")
 
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to add note entry: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to add note: {str(e)}")
+        raise ExternalServiceError(message=f"Failed to add note: {str(e)}", service="notion", status_code=500)
 
 
 # Legacy endpoint for backward compatibility

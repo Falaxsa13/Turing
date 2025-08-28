@@ -7,6 +7,7 @@ from notion_client import AsyncClient
 from typing import List, Dict, Optional, Any
 from loguru import logger
 import asyncio
+from app.schemas.sync import NotionCourseInfo, NotionAssignmentInfo
 
 
 class NotionWorkspaceManager:
@@ -376,7 +377,7 @@ class NotionWorkspaceManager:
 
         return results
 
-    async def get_synced_courses(self) -> List[Dict[str, Any]]:
+    async def get_synced_courses(self) -> List[NotionCourseInfo]:
         """Get all courses from Notion that have Canvas course IDs"""
         try:
             database_id = await self.get_database_by_name("Courses")
@@ -445,10 +446,11 @@ class NotionWorkspaceManager:
             logger.error(f"Failed to get synced courses: {e}")
             return []
 
-    async def get_existing_assignments(self) -> List[Dict[str, Any]]:
+    async def get_existing_assignments(self) -> List[NotionAssignmentInfo]:
         """Get all existing assignments from Notion with their Canvas assignment IDs"""
         try:
             database_id = await self.get_database_by_name("Assignments/Exams")
+
             if not database_id:
                 logger.warning("Assignments/Exams database not found")
                 return []
@@ -505,20 +507,23 @@ class NotionWorkspaceManager:
     async def delete_assignments_by_canvas_ids(self, canvas_assignment_ids: List[str]) -> int:
         """Delete assignments from Notion by Canvas assignment IDs"""
         try:
-            existing_assignments = await self.get_existing_assignments()
-            deleted_count = 0
+            existing_assignments: List[NotionAssignmentInfo] = await self.get_existing_assignments()
+            if not existing_assignments:
+                logger.warning("No existing assignments found")
+                return 0
 
+            deleted_count = 0
             for assignment in existing_assignments:
-                if assignment["canvas_assignment_id"] in canvas_assignment_ids:
+                if assignment.canvas_assignment_id in canvas_assignment_ids:
                     try:
                         # Archive (delete) the page in Notion
-                        await self.client.pages.update(page_id=assignment["notion_page_id"], archived=True)
+                        await self.client.pages.update(page_id=assignment.notion_page_id, archived=True)
                         deleted_count += 1
                         logger.info(
-                            f"Deleted assignment: {assignment['title']} (Canvas ID: {assignment['canvas_assignment_id']})"
+                            f"Deleted assignment: {assignment.title} (Canvas ID: {assignment.canvas_assignment_id})"
                         )
                     except Exception as e:
-                        logger.error(f"Failed to delete assignment {assignment['title']}: {e}")
+                        logger.error(f"Failed to delete assignment {assignment.title}: {e}")
 
             logger.info(f"Deleted {deleted_count} assignments")
             return deleted_count

@@ -1,15 +1,17 @@
 """
-Firebase configuration and initialization for Firestore database.
+Firebase configuration and management for the Turing Project.
 """
 
-import firebase_admin
-from firebase_admin import credentials, firestore, auth
-from app.config import settings
-from loguru import logger
-from typing import Dict, Any, Optional, List
-import json
-import asyncio
 import os
+import logging
+from typing import Dict, Any, Optional, List
+from firebase_admin import credentials, firestore, initialize_app, _apps, auth
+from app.core.config import settings
+from app.models.user_settings import UserSettings, AuditLog, UserPreferences
+from app.schemas.sync import SyncLog
+
+# Module-level logger (industry standard)
+logger = logging.getLogger(__name__)
 
 
 class FirebaseManager:
@@ -24,7 +26,7 @@ class FirebaseManager:
         """Initialize Firebase Admin SDK with proper credentials handling"""
         try:
             # Check if Firebase is already initialized
-            if not firebase_admin._apps:
+            if not _apps:
                 # Try different initialization methods in order of preference
 
                 # Method 1: Service account key file (for local development)
@@ -32,21 +34,34 @@ class FirebaseManager:
                 if os.path.exists(service_account_path):
                     logger.info("Using service account key file for Firebase initialization")
                     cred = credentials.Certificate(service_account_path)
-                    firebase_admin.initialize_app(
-                        cred,
-                        {
-                            "projectId": settings.firebase_project_id,
-                        },
-                    )
-                    logger.info("Firebase initialized with service account key")
+
+                    # Read project ID from service account file instead of config
+                    import json
+
+                    with open(service_account_path, "r") as f:
+                        service_account_data = json.load(f)
+                        project_id = service_account_data.get("project_id")
+
+                    if project_id:
+                        initialize_app(
+                            cred,
+                            {
+                                "projectId": project_id,
+                            },
+                        )
+                        logger.info(f"Firebase initialized with service account key for project: {project_id}")
+                    else:
+                        logger.error("Service account file missing project_id")
+                        self.firebase_available = False
+                        return
 
                 # Method 2: Application Default Credentials (for production)
-                elif settings.firebase_project_id != "dummy-project-id":
+                elif settings.firebase.project_id != "dummy-project-id":
                     logger.info("Attempting Firebase initialization with Application Default Credentials")
-                    firebase_admin.initialize_app(
+                    initialize_app(
                         credentials.ApplicationDefault(),
                         {
-                            "projectId": settings.firebase_project_id,
+                            "projectId": settings.firebase.project_id,
                         },
                     )
                     logger.info("Firebase initialized with Application Default Credentials")
@@ -88,12 +103,18 @@ class FirebaseManager:
             logger.warning(f"Firebase not available, returning empty user settings for {user_email}")
             return None
 
+        if self.db is None:
+            return None
+
         try:
             doc_ref = self.db.collection("user_settings").document(user_email)
             doc = doc_ref.get()
 
             if doc.exists:
                 data = doc.to_dict()
+                if not data:
+                    return None
+
                 data["user_email"] = user_email  # Add the document ID as user_email
                 return data
             return None
@@ -242,7 +263,7 @@ class FirebaseManager:
             logger.error(f"Failed to save user preferences for {user_email}: {e}")
             return False
 
-    async def get_user_preferences(self, user_email: str) -> Dict[str, Any]:
+    async def get_user_preferences(self, user_email: str) -> Optional[Dict[str, Any]]:
         """Get user preferences"""
         error = self._check_firebase_available()
         if error:
