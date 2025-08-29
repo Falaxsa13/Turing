@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime, timezone
 
@@ -89,26 +89,15 @@ class AssignmentSyncRequest(BaseModel):
 
 # Sync Status Models - Updated to match actual data structure
 class NotionCourseInfo(BaseModel):
-    # Handle both field naming conventions from different sources
-    notion_id: Optional[str] = None
-    notion_page_id: Optional[str] = None
-    canvas_id: Optional[Union[int, str]] = None
-    canvas_course_id: Optional[str] = None
-    name: Optional[str] = None
-    title: Optional[str] = None
+    notion_page_id: str
+    title: str
     course_code: Optional[str] = None
-    term: Optional[str] = None
-    professor: Optional[str] = None
 
 
 class NotionAssignmentInfo(BaseModel):
-    # Handle both field naming conventions from different sources
-    notion_id: str = Field(description="Notion ID of the course")
-    notion_page_id: str = Field(description="Notion page ID of the course")
-    canvas_id: Optional[Union[int, str]] = Field(description="Canvas ID of the course")
-    canvas_assignment_id: Optional[str] = Field(description="Canvas assignment ID of the course")
-    name: Optional[str] = Field(description="Name of the course")
-    title: Optional[str] = Field(description="Title of the course")
+    notion_page_id: str
+    title: str
+    canvas_assignment_id: Optional[str] = None
 
 
 class SetupStatus(BaseModel):

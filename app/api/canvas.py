@@ -2,6 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.firebase import get_firebase_db
+from app.auth import get_current_user_email
 from app.core.exceptions import ExternalServiceError, ValidationError, DatabaseError
 from app.core.responses import success_response
 from app.schemas.canvas import CanvasInspectionResponse
@@ -50,7 +51,9 @@ async def test_canvas_connection(request: CanvasTestRequest):
 
 
 @router.post("/inspect", response_model=CanvasInspectionResponse)
-async def inspect_canvas_courses(user_email: str, firebase_db=Depends(get_firebase_db)):
+async def inspect_canvas_courses(
+    user_email: str = Depends(get_current_user_email), firebase_db=Depends(get_firebase_db)
+):
     """Get detailed Canvas course structure including professor information."""
     try:
         settings = await firebase_db.get_user_settings(user_email)
@@ -81,8 +84,10 @@ async def inspect_canvas_courses(user_email: str, firebase_db=Depends(get_fireba
         )
 
 
-@router.post("/course-details")
-async def get_canvas_course_details(course_id: int, user_email: str, firebase_db=Depends(get_firebase_db)):
+@router.get("/course-details/{course_id}")
+async def get_canvas_course_details(
+    course_id: int, user_email: str = Depends(get_current_user_email), firebase_db=Depends(get_firebase_db)
+):
     """Get detailed Canvas course information including sections and instructors."""
     try:
         settings = await firebase_db.get_user_settings(user_email)
