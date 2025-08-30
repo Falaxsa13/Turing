@@ -35,9 +35,9 @@ class AssignmentSyncService:
                 notion_parent_page_id=user_settings.notion_parent_page_id,
             )
 
-            sync_result = await sync_coordinator.sync_assignments_for_courses()
+            sync_result: AssignmentSyncResponse = await sync_coordinator.sync_assignments_for_courses()
 
-            if sync_result["success"] and sync_result["assignments_created"] > 0:
+            if sync_result.success and sync_result.assignments_created > 0:
                 now = datetime.now(timezone.utc)
                 await self.firebase_db.create_or_update_user_settings(
                     user_email,
@@ -48,26 +48,26 @@ class AssignmentSyncService:
                 )
 
             # Add sync log
-            status = "success" if sync_result["success"] else "failed"
+            status = "success" if sync_result.success else "failed"
             await self.firebase_db.add_sync_log(
                 user_email,
                 {
                     "sync_type": "assignments",
                     "status": status,
-                    "items_processed": sync_result["assignments_found"],
-                    "items_created": sync_result["assignments_created"],
-                    "items_failed": sync_result["assignments_failed"],
-                    "items_skipped": sync_result["assignments_skipped"],
+                    "items_processed": sync_result.assignments_found,
+                    "items_created": sync_result.assignments_created,
+                    "items_failed": sync_result.assignments_failed,
+                    "items_skipped": sync_result.assignments_skipped,
                     "metadata": {
-                        "courses_processed": sync_result["courses_processed"],
-                        "assignments": sync_result["created_assignments"][:10],  # Limit logged data
+                        "courses_processed": sync_result.courses_processed,
+                        "assignments": sync_result.created_assignments[:10],  # Limit logged data
                     },
                 },
             )
 
             logger.info(f"Updated last assignment sync time for user: {user_email}")
 
-            return AssignmentSyncResponse(**sync_result)
+            return sync_result
 
         except Exception as e:
             logger.error(f"Unexpected error during assignment sync: {e}")
