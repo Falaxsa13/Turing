@@ -53,26 +53,7 @@ async def sync_canvas_assignments(request: AssignmentSyncRequest, firebase_db=De
     """Fetch all assignments from previously synced Canvas courses and create them in Notion."""
     try:
         assignment_sync_service = AssignmentSyncService(firebase_db)
-        sync_result = await assignment_sync_service.sync_assignments(request.user_email)
-
-        return AssignmentSyncResponse(
-            success=sync_result["success"],
-            message=sync_result["message"],
-            courses_processed=sync_result["courses_processed"],
-            assignments_found=sync_result["assignments_found"],
-            assignments_created=sync_result["assignments_created"],
-            assignments_failed=sync_result["assignments_failed"],
-            assignments_skipped=sync_result["assignments_skipped"],
-            created_assignments=sync_result["created_assignments"],
-            failed_assignments=sync_result["failed_assignments"],
-            note=sync_result["note"],
-        )
-
-    except (DatabaseError, ValidationError) as e:
-        if isinstance(e, DatabaseError):
-            raise HTTPException(status_code=404, detail=str(e))
-        else:
-            raise HTTPException(status_code=400, detail=str(e))
+        return await assignment_sync_service.sync_assignments(request.user_email)
     except Exception as e:
         logger.error(f"Unexpected error during assignment sync: {e}")
         raise HTTPException(status_code=500, detail=f"Assignment sync failed: {str(e)}")

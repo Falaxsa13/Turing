@@ -95,7 +95,7 @@ class FirebaseManager:
             }
         return None
 
-    async def get_user_settings(self, user_email: str) -> Optional[Dict[str, Any]]:
+    async def get_user_settings(self, user_email: str) -> UserSettings:
         """Get user settings from Firestore"""
         error = self._check_firebase_available()
         if error:

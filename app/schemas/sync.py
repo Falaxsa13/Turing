@@ -89,6 +89,7 @@ class AssignmentSyncRequest(BaseModel):
 
 # Sync Status Models - Updated to match actual data structure
 class NotionCourseInfo(BaseModel):
+    canvas_course_id: int
     notion_page_id: str
     title: str
     course_code: Optional[str] = None

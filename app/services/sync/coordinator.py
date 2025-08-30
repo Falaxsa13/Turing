@@ -4,6 +4,7 @@ from loguru import logger
 
 from app.services.canvas import CanvasSyncService, AssignmentMapper
 from app.utils.notion_helper import NotionWorkspaceManager
+from app.schemas.sync import AssignmentSyncResponse
 
 
 class SyncCoordinator:
@@ -38,7 +39,7 @@ class SyncCoordinator:
 
             # Get existing courses to check for duplicates
             existing_courses = await self.notion_manager.get_synced_courses()
-            existing_canvas_ids = set(course["canvas_course_id"] for course in existing_courses)
+            existing_canvas_ids = set(course.canvas_course_id for course in existing_courses)
             logger.info(f"Found {len(existing_canvas_ids)} existing courses in Notion")
 
             # Get current semester courses from Canvas
@@ -160,7 +161,7 @@ class SyncCoordinator:
                 "note": "Check logs for detailed error information",
             }
 
-    async def sync_assignments_for_courses(self) -> Dict[str, Any]:
+    async def sync_assignments_for_courses(self) -> AssignmentSyncResponse:
         """
         Sync all assignments from Canvas to Notion for courses that were previously synced.
         Skips assignments that already exist in Notion (based on Canvas assignment ID).
@@ -175,30 +176,30 @@ class SyncCoordinator:
             synced_courses = await self.notion_manager.get_synced_courses()
 
             if not synced_courses:
-                return {
-                    "success": False,
-                    "message": "No courses with Canvas IDs found in Notion. Please run course sync first.",
-                    "courses_processed": 0,
-                    "assignments_found": 0,
-                    "assignments_created": 0,
-                    "assignments_failed": 0,
-                    "assignments_skipped": 0,
-                    "created_assignments": [],
-                    "failed_assignments": [],
-                    "note": "Use /sync/start to import courses first",
-                }
+                return AssignmentSyncResponse(
+                    success=False,
+                    message="No courses with Canvas IDs found in Notion. Please run course sync first.",
+                    courses_processed=0,
+                    assignments_found=0,
+                    assignments_created=0,
+                    assignments_failed=0,
+                    assignments_skipped=0,
+                    created_assignments=[],
+                    failed_assignments=[],
+                    note="Use /sync/start to import courses first",
+                )
 
             logger.info(f"Found {len(synced_courses)} courses with Canvas IDs")
 
             # Get existing assignments to check for duplicates
             existing_assignments = await self.notion_manager.get_existing_assignments()
             existing_canvas_ids = set(
-                assignment["canvas_assignment_id"]
+                assignment.canvas_assignment_id
                 for assignment in existing_assignments
-                if assignment.get("canvas_assignment_id")
+                if assignment.canvas_assignment_id
             )
             logger.info(f"Found {len(existing_canvas_ids)} existing assignments in Notion")
-            logger.debug(f"Existing Canvas assignment IDs: {list(existing_canvas_ids)[:10]}...")  # Show first 10
+            logger.debug(f"Existing Canvas assignment IDs: {list(existing_canvas_ids)[:10]}...")
 
             total_assignments_found = 0
             total_assignments_created = 0
@@ -209,9 +210,9 @@ class SyncCoordinator:
 
             # Process each course
             for course in synced_courses:
-                canvas_course_id = course["canvas_course_id"]
-                notion_course_id = course["notion_page_id"]
-                course_title = course["title"]
+                canvas_course_id = course.canvas_course_id
+                notion_course_id = course.notion_page_id
+                course_title = course.title
 
                 logger.info(f"Processing assignments for course: {course_title} (Canvas ID: {canvas_course_id})")
                 logger.debug(f"Notion course ID type: {type(notion_course_id)}, value: {repr(notion_course_id)}")
@@ -219,7 +220,7 @@ class SyncCoordinator:
                 try:
                     # Fetch assignments from Canvas for this course
                     canvas_assignments = await self.canvas_service.canvas_client.get_course_assignments(
-                        canvas_course_id
+                        str(canvas_course_id)
                     )
 
                     if not canvas_assignments:
@@ -309,33 +310,33 @@ class SyncCoordinator:
             )
             message = f"Assignment sync completed. Created {total_assignments_created}/{total_assignments_found} assignments{skipped_message}"
 
-            return {
-                "success": success,
-                "message": message,
-                "courses_processed": len(synced_courses),
-                "assignments_found": total_assignments_found,
-                "assignments_created": total_assignments_created,
-                "assignments_failed": total_assignments_failed,
-                "assignments_skipped": total_assignments_skipped,
-                "created_assignments": created_assignments,
-                "failed_assignments": failed_assignments,
-                "note": "Assignments synced with duplicate detection enabled",
-            }
+            return AssignmentSyncResponse(
+                success=success,
+                message=message,
+                courses_processed=len(synced_courses),
+                assignments_found=total_assignments_found,
+                assignments_created=total_assignments_created,
+                assignments_failed=total_assignments_failed,
+                assignments_skipped=total_assignments_skipped,
+                created_assignments=created_assignments,
+                failed_assignments=failed_assignments,
+                note="Assignments synced with duplicate detection enabled",
+            )
 
         except Exception as e:
             logger.error(f"Assignment sync failed: {e}")
-            return {
-                "success": False,
-                "message": f"Assignment sync failed: {str(e)}",
-                "courses_processed": 0,
-                "assignments_found": 0,
-                "assignments_created": 0,
-                "assignments_failed": 0,
-                "assignments_skipped": 0,
-                "created_assignments": [],
-                "failed_assignments": [],
-                "note": "Check logs for detailed error information",
-            }
+            return AssignmentSyncResponse(
+                success=False,
+                message=f"Assignment sync failed: {str(e)}",
+                courses_processed=0,
+                assignments_found=0,
+                assignments_created=0,
+                assignments_failed=0,
+                assignments_skipped=0,
+                created_assignments=[],
+                failed_assignments=[],
+                note="Check logs for detailed error information",
+            )
 
     async def _create_assignment_in_notion(
         self, assignment_data: Dict[str, Any], course_notion_id: str

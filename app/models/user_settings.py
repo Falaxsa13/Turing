@@ -8,27 +8,22 @@ class UserSettings(BaseModel):
 
     user_email: EmailStr
 
-    # Canvas configuration
-    canvas_base_url: Optional[str] = None
-    canvas_pat: Optional[str] = None  # Personal Access Token
+    canvas_base_url: str
+    canvas_pat: str
 
-    # Notion configuration
-    notion_token: Optional[str] = None
-    notion_parent_page_id: Optional[str] = None
+    created_at: datetime
 
-    # Google Calendar configuration
-    google_credentials: Optional[Dict[str, Any]] = None  # JSON credentials
+    last_assignment_sync: datetime
+    last_canvas_sync: datetime
+    last_notion_sync: datetime
+
+    notion_parent_page_id: str
+    notion_token: str
+    updated_at: datetime
+
+    google_credentials: Optional[Dict[str, Any]] = None
     google_calendar_id: Optional[str] = None
-
-    # Sync timestamps
-    last_canvas_sync: Optional[datetime] = None
-    last_notion_sync: Optional[datetime] = None
     last_google_sync: Optional[datetime] = None
-    last_assignment_sync: Optional[datetime] = None
-
-    # Audit timestamps
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat() if v else None}

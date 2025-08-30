@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 from app.core.exceptions import ValidationError, DatabaseError
+from app.schemas.sync import AssignmentSyncResponse
 from app.services.sync.coordinator import SyncCoordinator
 from app.models.user_settings import UserSettings
 import logging
-from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -12,35 +12,31 @@ class AssignmentSyncService:
     def __init__(self, firebase_db):
         self.firebase_db = firebase_db
 
-    async def sync_assignments(self, user_email: str):
+    async def sync_assignments(self, user_email: str) -> AssignmentSyncResponse:
         """Fetch all assignments from previously synced Canvas courses and create them in Notion."""
         try:
-            # Get user settings
-            user_settings: Optional[Dict[str, Any]] = await self.firebase_db.get_user_settings(user_email)
+            user_settings: UserSettings = await self.firebase_db.get_user_settings(user_email)
 
             if not user_settings:
                 raise DatabaseError("User not found. Please run /setup/init first.")
 
-            # Validate required settings
-            if not user_settings.get("canvas_base_url") or not user_settings.get("canvas_pat"):
+            if not user_settings.canvas_base_url or not user_settings.canvas_pat:
                 raise ValidationError("Canvas credentials not configured. Please set Canvas base URL and PAT.")
 
-            if not user_settings.get("notion_token") or not user_settings.get("notion_parent_page_id"):
+            if not user_settings.notion_token or not user_settings.notion_parent_page_id:
                 raise ValidationError("Notion credentials not configured. Please set Notion token and parent page ID.")
 
-            # Create sync coordinator and perform assignment sync
             logger.info(f"Starting assignment sync for user: {user_email}")
 
             sync_coordinator = SyncCoordinator(
-                canvas_base_url=user_settings["canvas_base_url"],
-                canvas_token=user_settings["canvas_pat"],
-                notion_token=user_settings["notion_token"],
-                notion_parent_page_id=user_settings["notion_parent_page_id"],
+                canvas_base_url=user_settings.canvas_base_url,
+                canvas_token=user_settings.canvas_pat,
+                notion_token=user_settings.notion_token,
+                notion_parent_page_id=user_settings.notion_parent_page_id,
             )
 
             sync_result = await sync_coordinator.sync_assignments_for_courses()
 
-            # Update last sync time if successful and log sync
             if sync_result["success"] and sync_result["assignments_created"] > 0:
                 now = datetime.now(timezone.utc)
                 await self.firebase_db.create_or_update_user_settings(
@@ -71,7 +67,7 @@ class AssignmentSyncService:
 
             logger.info(f"Updated last assignment sync time for user: {user_email}")
 
-            return sync_result
+            return AssignmentSyncResponse(**sync_result)
 
         except Exception as e:
             logger.error(f"Unexpected error during assignment sync: {e}")
