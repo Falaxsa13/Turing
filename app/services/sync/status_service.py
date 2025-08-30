@@ -3,7 +3,7 @@ from app.utils.notion_helper import NotionWorkspaceManager
 from app.models.user_settings import UserSettings
 import logging
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import List
 from app.schemas.sync import (
     SyncStatusResponse,
     SetupStatus,
@@ -36,18 +36,16 @@ class SyncStatusService:
         """Get all courses that have been synced from Canvas to Notion."""
         try:
             # Get user settings
-            user_settings: Optional[Dict[str, Any]] = await self.firebase_db.get_user_settings(user_email)
+            user_settings: UserSettings = await self.firebase_db.get_user_settings(user_email)
 
             if not user_settings:
                 raise DatabaseError("User not found. Please run /setup/init first.")
 
-            if not user_settings.get("notion_token") or not user_settings.get("notion_parent_page_id"):
+            if not user_settings.notion_token or not user_settings.notion_parent_page_id:
                 raise ValidationError("Notion credentials not configured. Please set Notion token and parent page ID.")
 
             # Get synced courses
-            notion_manager = NotionWorkspaceManager(
-                user_settings["notion_token"], user_settings["notion_parent_page_id"]
-            )
+            notion_manager = NotionWorkspaceManager(user_settings.notion_token, user_settings.notion_parent_page_id)
             synced_courses = await notion_manager.get_synced_courses()
 
             return {
@@ -66,18 +64,16 @@ class SyncStatusService:
         """Get all assignments that have been synced from Canvas to Notion."""
         try:
             # Get user settings
-            user_settings: Optional[Dict[str, Any]] = await self.firebase_db.get_user_settings(user_email)
+            user_settings: UserSettings = await self.firebase_db.get_user_settings(user_email)
 
             if not user_settings:
                 raise DatabaseError("User not found. Please run /setup/init first.")
 
-            if not user_settings.get("notion_token") or not user_settings.get("notion_parent_page_id"):
+            if not user_settings.notion_token or not user_settings.notion_parent_page_id:
                 raise ValidationError("Notion credentials not configured. Please set Notion token and parent page ID.")
 
             # Get synced assignments
-            notion_manager = NotionWorkspaceManager(
-                user_settings["notion_token"], user_settings["notion_parent_page_id"]
-            )
+            notion_manager = NotionWorkspaceManager(user_settings.notion_token, user_settings.notion_parent_page_id)
             synced_assignments = await notion_manager.get_existing_assignments()
 
             return {
@@ -96,18 +92,16 @@ class SyncStatusService:
         """Get overall sync status including course and assignment counts."""
         try:
             # Get user settings
-            user_settings = await self.firebase_db.get_user_settings(user_email)
+            user_settings: UserSettings = await self.firebase_db.get_user_settings(user_email)
 
             if not user_settings:
                 raise DatabaseError("User not found. Please run /setup/init first.")
 
-            if not user_settings.get("notion_token") or not user_settings.get("notion_parent_page_id"):
+            if not user_settings.notion_token or not user_settings.notion_parent_page_id:
                 raise ValidationError("Notion credentials not configured. Please set Notion token and parent page ID.")
 
             # Get sync data
-            notion_manager = NotionWorkspaceManager(
-                user_settings["notion_token"], user_settings["notion_parent_page_id"]
-            )
+            notion_manager = NotionWorkspaceManager(user_settings.notion_token, user_settings.notion_parent_page_id)
             synced_courses: List[NotionCourseInfo] = await notion_manager.get_synced_courses()
             synced_assignments: List[NotionAssignmentInfo] = await notion_manager.get_existing_assignments()
 
@@ -115,16 +109,16 @@ class SyncStatusService:
             recent_sync_logs = await self.firebase_db.get_sync_logs(user_email, limit=5)
 
             # Convert datetime fields to strings
-            last_course_sync = self._convert_datetime_to_string(user_settings.get("last_canvas_sync"))
-            last_assignment_sync = self._convert_datetime_to_string(user_settings.get("last_assignment_sync"))
+            last_course_sync = self._convert_datetime_to_string(user_settings.last_canvas_sync)
+            last_assignment_sync = self._convert_datetime_to_string(user_settings.last_assignment_sync)
 
             return SyncStatusResponse(
                 success=True,
                 message=f"Sync status retrieved for {user_email}",
                 user_email=user_email,
                 setup_status=SetupStatus(
-                    has_canvas=bool(user_settings.get("canvas_base_url") and user_settings.get("canvas_pat")),
-                    has_notion=bool(user_settings.get("notion_token") and user_settings.get("notion_parent_page_id")),
+                    has_canvas=bool(user_settings.canvas_base_url and user_settings.canvas_pat),
+                    has_notion=bool(user_settings.notion_token and user_settings.notion_parent_page_id),
                 ),
                 sync_history=SyncHistory(
                     last_course_sync=last_course_sync,
