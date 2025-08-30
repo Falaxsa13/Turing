@@ -5,9 +5,9 @@ This module provides services for logging operations in Firestore,
 including sync logs and audit logs with proper error handling.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 from loguru import logger
-from firebase_admin import firestore
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 from .manager import FirebaseManager
 from .constants import (
@@ -17,209 +17,121 @@ from .constants import (
     DEFAULT_AUDIT_LOGS_LIMIT,
 )
 
+Log = Dict[str, Any]
+
 
 class FirebaseLoggingService:
-    """
-    Service for managing logs in Firebase Firestore.
-
-    This service handles sync logs and audit logs operations
-    with proper error handling and development mode support.
-    """
+    """Service for managing sync and audit logs in Firebase Firestore."""
 
     def __init__(self, firebase_manager: FirebaseManager):
-        """
-        Initialize the logging service.
-
-        Args:
-            firebase_manager: Initialized Firebase manager instance
-        """
         self.firebase_manager = firebase_manager
         self.db = firebase_manager.get_database()
 
-    async def add_sync_log(self, user_email: str, sync_data: Dict[str, Any]) -> bool:
-        """
-        Add a sync log entry to Firestore.
-
-        Args:
-            user_email: User's email address
-            sync_data: Sync operation data to log
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.firebase_manager.is_available():
-            logger.warning(f"Firebase not available, skipping sync log for {user_email}")
-            return True  # Return True for development mode
-
-        if self.db is None:
-            logger.warning("Firebase database is not available")
-            return False
-
-        try:
-            log_entry = self._create_sync_log_entry(user_email, sync_data)
-            self.db.collection(SYNC_LOGS_COLLECTION).add(log_entry)
-            logger.info(f"Sync log added for {user_email}")
+    async def add_sync_log(self, user_email: str, sync_data: Log) -> bool:
+        """Add a sync log entry."""
+        if not self._available_for_write(user_email, "sync log"):
             return True
 
-        except Exception as e:
-            logger.error(f"Failed to add sync log for {user_email}: {e}")
-            return False
+        entry = self._make_sync_entry(user_email, sync_data)
+        return self._add_log(SYNC_LOGS_COLLECTION, entry, f"sync log for {user_email}")
 
-    async def get_sync_logs(self, user_email: str, limit: int = DEFAULT_SYNC_LOGS_LIMIT) -> List[Dict[str, Any]]:
-        """
-        Get recent sync logs for a user.
-
-        Args:
-            user_email: User's email address
-            limit: Maximum number of logs to retrieve
-
-        Returns:
-            List of sync log dictionaries
-        """
-        if not self._check_firebase_available(user_email, "get sync logs"):
-            return []
-
-        try:
-            query = (
-                self.db.collection(SYNC_LOGS_COLLECTION)
-                .where("user_email", "==", user_email)
-                .order_by("timestamp", direction=firestore.Query.DESCENDING)
-                .limit(limit)
-            )
-
-            return self._execute_log_query(query)
-
-        except Exception as e:
-            logger.error(f"Failed to get sync logs for {user_email}: {e}")
-            return []
+    async def get_sync_logs(self, user_email: str, limit: int = DEFAULT_SYNC_LOGS_LIMIT) -> List[Log]:
+        """Return recent sync logs for a user."""
+        return await self._get_logs(SYNC_LOGS_COLLECTION, user_email, limit)
 
     async def add_audit_log(
-        self, user_email: str, action: str, target_id: str, metadata: Optional[Dict[str, Any]] = None
+        self,
+        user_email: str,
+        action: str,
+        target_id: str,
+        metadata: Optional[Log] = None,
     ) -> bool:
-        """
-        Add an audit log entry to Firestore.
-
-        Args:
-            user_email: User's email address
-            action: Action performed
-            target_id: ID of the target object
-            metadata: Additional metadata for the action
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self._check_firebase_available(user_email, "audit log"):
-            return True  # Return True for development mode
-
-        try:
-            log_entry = self._create_audit_log_entry(user_email, action, target_id, metadata)
-            self.db.collection(AUDIT_LOGS_COLLECTION).add(log_entry)
-            logger.info(f"Audit log added: {action} for {user_email}")
+        """Add an audit log entry."""
+        if not self._available_for_write(user_email, "audit log"):
             return True
 
+        entry = self._make_audit_entry(user_email, action, target_id, metadata)
+        return self._add_log(AUDIT_LOGS_COLLECTION, entry, f"audit '{action}' for {user_email}")
+
+    async def get_audit_logs(self, user_email: str, limit: int = DEFAULT_AUDIT_LOGS_LIMIT) -> List[Log]:
+        """Return recent audit logs for a user."""
+        return await self._get_logs(AUDIT_LOGS_COLLECTION, user_email, limit)
+
+    # ---------------------------
+    # Internal helpers
+    # ---------------------------
+
+    def _available_for_write(self, user_email: str, operation: str) -> bool:
+        """Checks write availability; logs and returns False in dev mode."""
+        if not self.firebase_manager.is_available():
+            logger.info(f"Firebase not available, skipping {operation} for {user_email}")
+            return False
+        if not self.db:
+            logger.warning("Firestore client not initialized; write skipped")
+            return False
+        return True
+
+    def _available_for_read(self, user_email: str, operation: str) -> bool:
+        """Checks read availability; returns False if not possible."""
+        if not self.firebase_manager.is_available():
+            logger.info(f"Firebase not available, skipping {operation} for {user_email}")
+            return False
+        if not self.db:
+            logger.warning("Firestore client not initialized; read not possible")
+            return False
+        return True
+
+    def _add_log(self, collection: str, entry: Log, context: str) -> bool:
+        try:
+            if not self.db:
+                logger.warning("Firebase database is not available")
+                return False
+
+            self.db.collection(collection).add(entry)
+            logger.info(f"{context} added")
+            return True
         except Exception as e:
-            logger.error(f"Failed to add audit log for {user_email}: {e}")
+            logger.error(f"Failed to add {context}: {e}")
             return False
 
-    async def get_audit_logs(self, user_email: str, limit: int = DEFAULT_AUDIT_LOGS_LIMIT) -> List[Dict[str, Any]]:
-        """
-        Get recent audit logs for a user.
-
-        Args:
-            user_email: User's email address
-            limit: Maximum number of logs to retrieve
-
-        Returns:
-            List of audit log dictionaries
-        """
-        if not self._check_firebase_available(user_email, "get audit logs"):
+    async def _get_logs(self, collection: str, user_email: str, limit: int) -> List[Log]:
+        if not self._available_for_read(user_email, f"get {collection}"):
             return []
-
         try:
+
+            if not self.db:
+                logger.warning("Firebase database is not available")
+                return []
+
             query = (
-                self.db.collection(AUDIT_LOGS_COLLECTION)
+                self.db.collection(collection)
                 .where("user_email", "==", user_email)
-                .order_by("timestamp", direction=firestore.Query.DESCENDING)
+                .order_by("timestamp", direction="desc")
                 .limit(limit)
             )
-
             return self._execute_log_query(query)
-
         except Exception as e:
-            logger.error(f"Failed to get audit logs for {user_email}: {e}")
+            logger.error(f"Failed to get logs from {collection} for {user_email}: {e}")
             return []
 
-    def _create_sync_log_entry(self, user_email: str, sync_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Create a sync log entry with proper structure.
+    @staticmethod
+    def _make_sync_entry(user_email: str, data: Log) -> Log:
+        entry = dict(data)
+        entry["user_email"] = user_email
+        entry["timestamp"] = SERVER_TIMESTAMP
+        return entry
 
-        Args:
-            user_email: User's email address
-            sync_data: Sync operation data
-
-        Returns:
-            Formatted sync log entry
-        """
-        log_entry = sync_data.copy()
-        log_entry["user_email"] = user_email
-        log_entry["timestamp"] = firestore.SERVER_TIMESTAMP
-        return log_entry
-
-    def _create_audit_log_entry(
-        self, user_email: str, action: str, target_id: str, metadata: Optional[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """
-        Create an audit log entry with proper structure.
-
-        Args:
-            user_email: User's email address
-            action: Action performed
-            target_id: ID of the target object
-            metadata: Additional metadata
-
-        Returns:
-            Formatted audit log entry
-        """
+    @staticmethod
+    def _make_audit_entry(user_email: str, action: str, target_id: str, metadata: Optional[Log]) -> Log:
         return {
             "user_email": user_email,
             "action": action,
             "target_id": target_id,
             "metadata": metadata or {},
-            "timestamp": firestore.SERVER_TIMESTAMP,
+            "timestamp": SERVER_TIMESTAMP,
         }
 
-    def _execute_log_query(self, query) -> List[Dict[str, Any]]:
-        """
-        Execute a log query and format the results.
-
-        Args:
-            query: Firestore query object
-
-        Returns:
-            List of formatted log dictionaries
-        """
-        docs = query.stream()
-        logs = []
-
-        for doc in docs:
-            log_data = doc.to_dict()
-            log_data["id"] = doc.id
-            logs.append(log_data)
-
-        return logs
-
-    def _check_firebase_available(self, user_email: str, operation: str) -> bool:
-        """
-        Check if Firebase is available for the operation.
-
-        Args:
-            user_email: User email for logging
-            operation: Operation description for logging
-
-        Returns:
-            True if Firebase is available, False otherwise
-        """
-        if not self.firebase_manager.is_available():
-            logger.info(f"Firebase not available, skipping {operation} for {user_email}")
-            return False
-        return True
+    @staticmethod
+    def _execute_log_query(query) -> List[Log]:
+        # Compact stream → list transform; each item includes document ID.
+        return [{"id": d.id, **d.to_dict()} for d in query.stream()]
