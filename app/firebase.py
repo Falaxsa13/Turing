@@ -7,8 +7,9 @@ import logging
 from typing import Dict, Any, Optional, List
 from firebase_admin import credentials, firestore, initialize_app, _apps, auth
 from app.core.config import settings
-from app.models.user_settings import UserSettings, AuditLog, UserPreferences
+from app.models.user_settings import AuditLog, UserPreferences, UserSettings
 from app.schemas.sync import SyncLog
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 # Module-level logger (industry standard)
 logger = logging.getLogger(__name__)
@@ -99,12 +100,10 @@ class FirebaseManager:
         """Get user settings from Firestore"""
         error = self._check_firebase_available()
         if error:
-            # Return empty dict for development mode
-            logger.warning(f"Firebase not available, returning empty user settings for {user_email}")
-            return None
+            raise ValueError("Firebase not available")
 
         if self.db is None:
-            return None
+            raise ValueError("Firebase database is not available")
 
         try:
             doc_ref = self.db.collection("user_settings").document(user_email)
@@ -113,26 +112,29 @@ class FirebaseManager:
             if doc.exists:
                 data = doc.to_dict()
                 if not data:
-                    return None
+                    raise ValueError("User settings data is not available")
 
                 data["user_email"] = user_email  # Add the document ID as user_email
-                return data
-            return None
+                return UserSettings(**data)
+            raise ValueError("User settings data is not available")
 
         except Exception as e:
             logger.error(f"Failed to get user settings for {user_email}: {e}")
-            return None
+            raise ValueError("Failed to get user settings")
 
     async def create_or_update_user_settings(self, user_email: str, settings_data: Dict[str, Any]) -> bool:
         """Create or update user settings in Firestore"""
         error = self._check_firebase_available()
         if error:
             logger.warning(f"Firebase not available, skipping user settings update for {user_email}")
-            return True  # Return True for development mode
+            return True
 
         try:
             # Remove user_email from data if present (it's the document ID)
             settings_data.pop("user_email", None)
+
+            if self.db is None:
+                raise ValueError("Firebase database is not available")
 
             doc_ref = self.db.collection("user_settings").document(user_email)
             doc_ref.set(settings_data, merge=True)
@@ -153,7 +155,10 @@ class FirebaseManager:
 
         try:
             sync_data["user_email"] = user_email
-            sync_data["timestamp"] = firestore.SERVER_TIMESTAMP
+            sync_data["timestamp"] = SERVER_TIMESTAMP
+
+            if self.db is None:
+                return False
 
             self.db.collection("sync_logs").add(sync_data)
             logger.info(f"Sync log added for {user_email}")
@@ -169,11 +174,14 @@ class FirebaseManager:
         if error:
             return []
 
+        if self.db is None:
+            return []
+
         try:
             query = (
                 self.db.collection("sync_logs")
                 .where("user_email", "==", user_email)
-                .order_by("timestamp", direction=firestore.Query.DESCENDING)
+                .order_by("timestamp", direction="desc")
                 .limit(limit)
             )
 
@@ -191,9 +199,7 @@ class FirebaseManager:
             logger.error(f"Failed to get sync logs for {user_email}: {e}")
             return []
 
-    async def add_audit_log(
-        self, user_email: str, action: str, target_id: str, metadata: Dict[str, Any] = None
-    ) -> bool:
+    async def add_audit_log(self, user_email: str, action: str, target_id: str, metadata: Dict[str, Any] = {}) -> bool:
         """Add an audit log entry"""
         error = self._check_firebase_available()
         if error:
@@ -206,8 +212,11 @@ class FirebaseManager:
                 "action": action,
                 "target_id": target_id,
                 "metadata": metadata or {},
-                "timestamp": firestore.SERVER_TIMESTAMP,
+                "timestamp": SERVER_TIMESTAMP,
             }
+
+            if self.db is None:
+                return False
 
             self.db.collection("audit_logs").add(audit_data)
             logger.info(f"Audit log added: {action} for {user_email}")
@@ -224,10 +233,14 @@ class FirebaseManager:
             return []
 
         try:
+
+            if self.db is None:
+                return []
+
             query = (
                 self.db.collection("audit_logs")
                 .where("user_email", "==", user_email)
-                .order_by("timestamp", direction=firestore.Query.DESCENDING)
+                .order_by("timestamp", direction="desc")
                 .limit(limit)
             )
 
@@ -253,6 +266,10 @@ class FirebaseManager:
             return True
 
         try:
+
+            if self.db is None:
+                return False
+
             doc_ref = self.db.collection("user_preferences").document(user_email)
             doc_ref.set(preferences, merge=True)
 
@@ -276,6 +293,15 @@ class FirebaseManager:
             }
 
         try:
+
+            if self.db is None:
+                return {
+                    "dashboard_layout": "grid",
+                    "default_view": "assignments",
+                    "notifications_enabled": True,
+                    "theme": "light",
+                }
+
             doc_ref = self.db.collection("user_preferences").document(user_email)
             doc = doc_ref.get()
 
