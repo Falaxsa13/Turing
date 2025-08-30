@@ -179,10 +179,7 @@ class FirebaseManager:
 
         try:
             query = (
-                self.db.collection("sync_logs")
-                .where("user_email", "==", user_email)
-                .order_by("timestamp", direction="desc")
-                .limit(limit)
+                self.db.collection("sync_logs").where("user_email", "==", user_email).order_by("timestamp").limit(limit)
             )
 
             docs = query.stream()
@@ -240,7 +237,7 @@ class FirebaseManager:
             query = (
                 self.db.collection("audit_logs")
                 .where("user_email", "==", user_email)
-                .order_by("timestamp", direction="desc")
+                .order_by("timestamp")
                 .limit(limit)
             )
 

@@ -11,6 +11,7 @@ from app.auth import get_current_user_email
 from app.core.exceptions import DatabaseError, ExternalServiceError, ValidationError
 from app.core.responses import error_response, success_response
 from app.firebase import get_firebase_db
+from app.models.user_settings import UserSettings
 from app.schemas.setup import CanvasPATRequest, InitSetupRequest, SetupResponse, SetupStatusResponse
 
 # Module-level logger (industry standard)
@@ -123,32 +124,12 @@ async def get_setup_status(user_email: str, firebase_db=Depends(get_firebase_db)
     """📊 Get setup status for the user."""
     try:
         # Get user settings
-        user_settings = await firebase_db.get_user_settings(user_email)
-
-        if not user_settings:
-            # Return default status for new user
-            return SetupStatusResponse(
-                user_email=user_email,
-                has_canvas=False,
-                has_notion=False,
-                has_google=False,
-                last_canvas_sync=None,
-                last_notion_sync=None,
-                last_google_sync=None,
-                last_assignment_sync=None,
-                setup_complete=False,
-                next_steps=[
-                    "Run /setup/init to initialize your account",
-                    "Save Canvas credentials",
-                    "Test Canvas connection",
-                    "Start syncing with /sync/start",
-                ],
-            )
+        user_settings: UserSettings = await firebase_db.get_user_settings(user_email)
 
         # Check what's configured
-        has_canvas = bool(user_settings.get("canvas_base_url") and user_settings.get("canvas_pat"))
-        has_notion = bool(user_settings.get("notion_token") and user_settings.get("notion_parent_page_id"))
-        has_google = bool(user_settings.get("google_credentials"))
+        has_canvas = bool(user_settings.canvas_base_url and user_settings.canvas_pat)
+        has_notion = bool(user_settings.notion_token and user_settings.notion_parent_page_id)
+        has_google = bool(user_settings.google_credentials)
 
         setup_complete = has_canvas and has_notion
 
@@ -166,10 +147,10 @@ async def get_setup_status(user_email: str, firebase_db=Depends(get_firebase_db)
             has_canvas=has_canvas,
             has_notion=has_notion,
             has_google=has_google,
-            last_canvas_sync=user_settings.get("last_canvas_sync"),
-            last_notion_sync=user_settings.get("last_notion_sync"),
-            last_google_sync=user_settings.get("last_google_sync"),
-            last_assignment_sync=user_settings.get("last_assignment_sync"),
+            last_canvas_sync=user_settings.last_canvas_sync,
+            last_notion_sync=user_settings.last_notion_sync,
+            last_google_sync=user_settings.last_google_sync,
+            last_assignment_sync=user_settings.last_assignment_sync,
             setup_complete=setup_complete,
             next_steps=next_steps,
         )

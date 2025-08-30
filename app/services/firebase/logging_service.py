@@ -8,6 +8,7 @@ including sync logs and audit logs with proper error handling.
 from typing import Any, Dict, List, Optional
 from loguru import logger
 from google.cloud.firestore import SERVER_TIMESTAMP
+from firebase_admin import firestore
 
 from .manager import FirebaseManager
 from .constants import (
@@ -104,10 +105,7 @@ class FirebaseLoggingService:
                 return []
 
             query = (
-                self.db.collection(collection)
-                .where("user_email", "==", user_email)
-                .order_by("timestamp", direction="desc")
-                .limit(limit)
+                self.db.collection(collection).where("user_email", "==", user_email).order_by("timestamp").limit(limit)
             )
             return self._execute_log_query(query)
         except Exception as e:
