@@ -6,7 +6,7 @@ from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
-from app.config import settings
+from app.core.config import settings
 from app.firebase import firebase_manager, get_firebase_db
 from app.models.user import User, AuthenticatedUser
 from loguru import logger
@@ -23,17 +23,17 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
+        expire = datetime.utcnow() + timedelta(minutes=settings.jwt.expire_minutes)
 
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    encoded_jwt = jwt.encode(to_encode, settings.jwt.secret_key, algorithm=settings.jwt.algorithm)
     return encoded_jwt
 
 
 def verify_token(token: str) -> Optional[Dict[str, Any]]:
     """Verify JWT token and return payload"""
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(token, settings.jwt.secret_key, algorithms=[settings.jwt.algorithm])
         return payload
     except JWTError as e:
         logger.error(f"JWT verification failed: {e}")
@@ -138,7 +138,7 @@ async def authenticate_user_with_firebase(
             logger.info(f"Created new user settings for {user_email}")
 
         # Create JWT token for the user
-        access_token_expires = timedelta(minutes=settings.jwt_expire_minutes)
+        access_token_expires = timedelta(minutes=settings.jwt.expire_minutes)
         access_token = create_access_token(
             data={"sub": user_email, "user_id": user_id}, expires_delta=access_token_expires
         )
@@ -158,7 +158,7 @@ async def authenticate_user_with_firebase(
             "photo_url": photo_url,
             "access_token": access_token,
             "token_type": "bearer",
-            "expires_in": settings.jwt_expire_minutes * 60,
+            "expires_in": settings.jwt.expire_minutes * 60,
         }
 
     except Exception as e:
