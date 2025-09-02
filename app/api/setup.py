@@ -2,27 +2,22 @@
 Setup and configuration API endpoints for the Turing Project.
 """
 
-import logging
 from datetime import datetime, timezone
+from loguru import logger
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.auth import get_current_user_email
 from app.core.exceptions import DatabaseError, ExternalServiceError, ValidationError
-from app.core.responses import error_response, success_response
 from app.firebase import get_firebase_db
 from app.models.user_settings import UserSettings
 from app.schemas.setup import CanvasPATRequest, InitSetupRequest, SetupResponse, SetupStatusResponse
-
-# Module-level logger (industry standard)
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
 
 @router.post("/init", response_model=SetupResponse)
 async def init_setup(request: InitSetupRequest, firebase_db=Depends(get_firebase_db)):
-    """🚀 Initialize user setup with Canvas and Notion credentials."""
+    """Initialize user setup with Canvas and Notion credentials."""
     try:
         user_email = request.user_email
 
@@ -79,7 +74,7 @@ async def init_setup(request: InitSetupRequest, firebase_db=Depends(get_firebase
 
 @router.post("/canvas/pat")
 async def save_canvas_pat(request: CanvasPATRequest, user_email: str, firebase_db=Depends(get_firebase_db)):
-    """🔑 Save Canvas Personal Access Token for the user."""
+    """Save Canvas Personal Access Token for the user."""
     try:
         # Get existing user settings
         user_settings = await firebase_db.get_user_settings(user_email)
@@ -121,7 +116,7 @@ async def save_canvas_pat(request: CanvasPATRequest, user_email: str, firebase_d
 
 @router.get("/me", response_model=SetupStatusResponse)
 async def get_setup_status(user_email: str, firebase_db=Depends(get_firebase_db)):
-    """📊 Get setup status for the user."""
+    """Get setup status for the user."""
     try:
         # Get user settings
         user_settings: UserSettings = await firebase_db.get_user_settings(user_email)
