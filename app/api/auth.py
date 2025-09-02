@@ -12,12 +12,11 @@ from app.schemas.auth import (
 )
 from app.models.user import AuthenticatedUser, UserProfile
 from datetime import datetime, timezone
-from app.config import settings
-import logging
+from app.core.config import settings
+from loguru import logger
 import asyncio
 
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
@@ -92,9 +91,7 @@ async def logout(
 async def get_current_user_info(
     current_user: AuthenticatedUser = Depends(get_current_user), firebase_db=Depends(get_firebase_db)
 ):
-    """
-    Get current authenticated user information.
-    """
+    """Get current authenticated user information."""
 
     try:
         user_email = current_user.user_email
@@ -124,7 +121,6 @@ async def get_current_user_info(
         )
 
     except Exception as e:
-        logger.error(f"Failed to get user info: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get user information")
 
 
@@ -135,12 +131,12 @@ async def get_firebase_config():
     """
     return FirebaseConfigResponse(
         firebase=FirebaseKeys(
-            apiKey=settings.firebase_api_key,
-            authDomain=settings.firebase_auth_domain,
-            projectId=settings.firebase_project_id,
-            storageBucket=settings.firebase_storage_bucket,
-            messagingSenderId=settings.firebase_messaging_sender_id,
-            appId=settings.firebase_app_id,
-            measurementId=settings.firebase_measurement_id,
+            apiKey=settings.firebase.api_key,
+            authDomain=settings.firebase.auth_domain,
+            projectId=settings.firebase.project_id,
+            storageBucket=settings.firebase.storage_bucket,
+            messagingSenderId=settings.firebase.messaging_sender_id,
+            appId=settings.firebase.app_id,
+            measurementId=settings.firebase.measurement_id,
         )
     )

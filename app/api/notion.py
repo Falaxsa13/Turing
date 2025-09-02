@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -6,15 +6,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.auth import get_current_user_email
 from app.core.exceptions import DatabaseError, ExternalServiceError, ValidationError
 from app.firebase import get_firebase_db
-from app.schemas.notion import NotionEntryRequest, NotionEntryResponse, NotionSchemaResponse, NotionWorkspaceResponse
+from app.schemas.notion import (
+    NotionEntryRequest,
+    NotionEntryResponse,
+    NotionSchemaResponse,
+    NotionWorkspaceResponse,
+)
 from app.utils.notion_helper import (
-    demo_add_entries,
     get_database_schemas,
     test_existing_databases,
     NotionWorkspaceManager,
 )
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/notion", tags=["notion"])
 
 

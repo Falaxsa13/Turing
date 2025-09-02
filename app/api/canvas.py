@@ -1,15 +1,14 @@
-import logging
+from loguru import logger
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.firebase import get_firebase_db
 from app.auth import get_current_user_email
 from app.core.exceptions import ExternalServiceError, ValidationError, DatabaseError
 from app.core.responses import success_response
-from app.schemas.canvas import CanvasInspectionResponse
+from app.schemas.sync import CanvasInspectionResponse
 from app.schemas.setup import CanvasTestRequest, CanvasTestResponse
 from app.services.canvas import CanvasSyncService
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/canvas", tags=["canvas"])
 
 
