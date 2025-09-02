@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -6,24 +6,19 @@ from datetime import datetime
 class UserSettings(BaseModel):
     """User settings model for Firebase Firestore"""
 
-    user_email: EmailStr
-
-    canvas_base_url: str
-    canvas_pat: str
-
-    created_at: datetime
-
-    last_assignment_sync: datetime
-    last_canvas_sync: datetime
-    last_notion_sync: datetime
-
-    notion_parent_page_id: str
-    notion_token: str
-    updated_at: datetime
-
-    google_credentials: Optional[Dict[str, Any]] = None
-    google_calendar_id: Optional[str] = None
-    last_google_sync: Optional[datetime] = None
+    user_email: EmailStr = Field(description="User email")
+    created_at: datetime = Field(default_factory=datetime.now, description="Created at")
+    updated_at: datetime = Field(default_factory=datetime.now, description="Updated at")
+    canvas_base_url: Optional[str] = Field(default=None, description="Canvas base URL")
+    canvas_pat: Optional[str] = Field(default=None, description="Canvas personal access token")
+    last_canvas_sync: Optional[datetime] = Field(default=None, description="Last canvas sync")
+    notion_token: Optional[str] = Field(default=None, description="Notion token")
+    notion_parent_page_id: Optional[str] = Field(default=None, description="Notion parent page ID")
+    last_notion_sync: Optional[datetime] = Field(default=None, description="Last notion sync")
+    last_assignment_sync: Optional[datetime] = Field(default=None, description="Last assignment sync")
+    google_credentials: Optional[Dict[str, Any]] = Field(default=None, description="Google credentials")
+    google_calendar_id: Optional[str] = Field(default=None, description="Google calendar ID")
+    last_google_sync: Optional[datetime] = Field(default=None, description="Last google sync")
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat() if v else None}
@@ -32,31 +27,30 @@ class UserSettings(BaseModel):
 class UserPreferences(BaseModel):
     """User preferences model for Firebase Firestore"""
 
-    user_email: EmailStr
-    dashboard_layout: str = "grid"  # grid, list
-    default_view: str = "assignments"  # assignments, courses, dashboard
-    notifications_enabled: bool = True
-    theme: str = "light"  # light, dark
-    sync_frequency: str = "manual"  # manual, hourly, daily
+    user_email: EmailStr = Field(description="User email")
+    dashboard_layout: str = Field(default="grid", description="Dashboard layout")
+    default_view: str = Field(default="assignments", description="Default view")
+    notifications_enabled: bool = Field(default=True, description="Notifications enabled")
+    theme: str = Field(default="light", description="Theme")
+    sync_frequency: str = Field(default="manual", description="Sync frequency")
 
-    # UI preferences
-    show_completed_assignments: bool = True
-    show_past_assignments: bool = True
-    assignments_per_page: int = 50
+    show_completed_assignments: bool = Field(default=True, description="Show completed assignments")
+    show_past_assignments: bool = Field(default=True, description="Show past assignments")
+    assignments_per_page: int = Field(default=50, description="Assignments per page")
 
 
 class AuditLog(BaseModel):
     """Audit log model for Firebase Firestore"""
 
-    id: Optional[str] = None
-    user_email: EmailStr
-    action: str  # "create", "update", "delete", "sync"
-    resource_type: str  # "course", "assignment", "user_settings"
-    target_id: str  # ID of the affected resource
-    old_value: Optional[Dict[str, Any]] = None
-    new_value: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
-    timestamp: Optional[datetime] = None
+    id: Optional[str] = Field(default=None, description="ID")
+    user_email: EmailStr = Field(description="User email")
+    action: str = Field(description="Action (create, update, delete, sync)")
+    resource_type: str = Field(description="Resource type (course, assignment, user_settings)")
+    target_id: str = Field(description="Target ID (ID of the affected resource)")
+    old_value: Optional[Dict[str, Any]] = Field(default=None, description="Old value")
+    new_value: Optional[Dict[str, Any]] = Field(default=None, description="New value")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Metadata")
+    timestamp: Optional[datetime] = Field(default=None, description="Timestamp")
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat() if v else None}
@@ -65,15 +59,15 @@ class AuditLog(BaseModel):
 class UserSession(BaseModel):
     """User session model for authentication"""
 
-    user_email: EmailStr
-    user_id: str  # Firebase user ID
-    display_name: Optional[str] = None
-    photo_url: Optional[str] = None
-    access_token: str
-    refresh_token: Optional[str] = None
-    expires_at: datetime
-    created_at: datetime
-    last_activity: datetime
+    user_email: EmailStr = Field(description="User email")
+    user_id: str = Field(description="Firebase user ID")
+    display_name: Optional[str] = Field(default=None, description="Display name")
+    photo_url: Optional[str] = Field(default=None, description="Photo URL")
+    access_token: str = Field(description="Access token")
+    refresh_token: Optional[str] = Field(default=None, description="Refresh token")
+    expires_at: datetime = Field(description="Expires at")
+    created_at: datetime = Field(default_factory=datetime.now, description="Created at")
+    last_activity: datetime = Field(default_factory=datetime.now, description="Last activity")
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat() if v else None}
