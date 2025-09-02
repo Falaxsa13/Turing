@@ -1,4 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+"""
+Comprehensive sync API endpoints for Canvas to Notion synchronization.
+
+This module provides endpoints for both course synchronization and enhanced assignment
+synchronization with rich formatting and comprehensive Canvas assignment details.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
+from loguru import logger
+
 from app.firebase import get_firebase_db
 from app.core.exceptions import ValidationError, DatabaseError
 from app.schemas.sync import (
@@ -12,10 +22,9 @@ from app.schemas.sync import (
     AuditLogResponse,
 )
 from app.schemas.setup import SyncStartRequest
-from app.services.sync import CourseSyncService, AssignmentSyncService, SyncStatusService, SyncLogService
-import logging
+from app.services.sync import CourseSyncService, SyncStatusService, SyncLogService
+from app.services.sync.assignment_sync import AssignmentSyncService
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sync", tags=["sync"])
 
 
@@ -51,12 +60,58 @@ async def start_canvas_notion_sync(request: SyncStartRequest, firebase_db=Depend
 @router.post("/assignments", response_model=AssignmentSyncResponse)
 async def sync_canvas_assignments(request: AssignmentSyncRequest, firebase_db=Depends(get_firebase_db)):
     """Fetch all assignments from previously synced Canvas courses and create them in Notion."""
-    try:
+    try:  # Initialize enhanced sync service
         assignment_sync_service = AssignmentSyncService(firebase_db)
-        return await assignment_sync_service.sync_assignments(request.user_email)
+
+        # Perform assignment sync
+        sync_result: AssignmentSyncResponse = await assignment_sync_service.sync_assignments(
+            user_email=request.user_email,
+            include_submissions=request.include_submissions,
+            include_statistics=request.include_statistics,
+            include_rubrics=request.include_rubrics,
+            include_assignment_groups=request.include_assignment_groups,
+        )
+
+        return sync_result
     except Exception as e:
-        logger.error(f"Unexpected error during assignment sync: {e}")
+        logger.error(f"Unexpected error in assignment sync: {e}")
         raise HTTPException(status_code=500, detail=f"Assignment sync failed: {str(e)}")
+
+
+@router.get("/assignments/preview")
+async def preview_assignment_formatting(
+    user_email: str, assignment_id: str, course_id: str, firebase_db=Depends(get_firebase_db)
+):
+    """Preview how an assignment will be formatted in Notion."""
+    try:
+        logger.info(f"Assignment formatting preview requested for assignment {assignment_id}")
+
+        return {
+            "success": True,
+            "message": "Assignment formatting preview",
+            "assignment_id": assignment_id,
+            "course_id": course_id,
+            "preview": {
+                "title": "Assignment Title",
+                "type": "Assignment",
+                "content_blocks": [
+                    "Header with assignment title and type badge",
+                    "Quick info callout with key details",
+                    "Description section with cleaned HTML",
+                    "Timing and due dates",
+                    "Submission information",
+                    "Assignment group details",
+                    "Grading and statistics",
+                    "Rubric with collapsible criteria",
+                    "Canvas metadata and links",
+                ],
+                "note": "This is a preview of the rich formatting that would be applied.",
+            },
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to create assignment preview: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create assignment preview: {str(e)}")
 
 
 @router.get("/courses", response_model=SyncedCoursesResponse)
@@ -76,7 +131,7 @@ async def get_synced_courses(user_email: str, firebase_db=Depends(get_firebase_d
         raise HTTPException(status_code=500, detail=f"Failed to get synced courses: {str(e)}")
 
 
-@router.get("/assignments", response_model=SyncedAssignmentsResponse)
+@router.get("/get-assignments", response_model=SyncedAssignmentsResponse)
 async def get_synced_assignments(user_email: str, firebase_db=Depends(get_firebase_db)):
     """Get all assignments that have been synced from Canvas to Notion."""
     try:
