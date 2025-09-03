@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from loguru import logger
 
-from app.firebase import get_firebase_db
+from app.core.dependencies import get_firebase_services, FirebaseServices
 from app.core.exceptions import ValidationError, DatabaseError
 from app.schemas.sync import (
     CanvasSyncResponse,
@@ -22,17 +22,19 @@ from app.schemas.sync import (
     AuditLogResponse,
 )
 from app.schemas.setup import SyncStartRequest
-from app.services.sync import CourseSyncService, SyncStatusService, SyncLogService
+from app.services.sync import CourseSyncService, SyncStatusService
 from app.services.sync.assignment_sync import AssignmentSyncService
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
 
 @router.post("/start", response_model=CanvasSyncResponse)
-async def start_canvas_notion_sync(request: SyncStartRequest, firebase_db=Depends(get_firebase_db)):
+async def start_canvas_notion_sync(
+    request: SyncStartRequest, firebase_services: FirebaseServices = Depends(get_firebase_services)
+):
     """Fetch your enrolled Canvas courses and create them in Notion for the current semester."""
     try:
-        course_sync_service = CourseSyncService(firebase_db)
+        course_sync_service = CourseSyncService(firebase_services)
         sync_result = await course_sync_service.sync_courses(request.user_email)
 
         return CanvasSyncResponse(
@@ -58,10 +60,12 @@ async def start_canvas_notion_sync(request: SyncStartRequest, firebase_db=Depend
 
 
 @router.post("/assignments", response_model=AssignmentSyncResponse)
-async def sync_canvas_assignments(request: AssignmentSyncRequest, firebase_db=Depends(get_firebase_db)):
+async def sync_canvas_assignments(
+    request: AssignmentSyncRequest, firebase_services: FirebaseServices = Depends(get_firebase_services)
+):
     """Fetch all assignments from previously synced Canvas courses and create them in Notion."""
     try:  # Initialize enhanced sync service
-        assignment_sync_service = AssignmentSyncService(firebase_db)
+        assignment_sync_service = AssignmentSyncService(firebase_services)
 
         # Perform assignment sync
         sync_result: AssignmentSyncResponse = await assignment_sync_service.sync_assignments(
@@ -80,7 +84,10 @@ async def sync_canvas_assignments(request: AssignmentSyncRequest, firebase_db=De
 
 @router.get("/assignments/preview")
 async def preview_assignment_formatting(
-    user_email: str, assignment_id: str, course_id: str, firebase_db=Depends(get_firebase_db)
+    user_email: str,
+    assignment_id: str,
+    course_id: str,
+    firebase_services: FirebaseServices = Depends(get_firebase_services),
 ):
     """Preview how an assignment will be formatted in Notion."""
     try:
@@ -115,10 +122,10 @@ async def preview_assignment_formatting(
 
 
 @router.get("/courses", response_model=SyncedCoursesResponse)
-async def get_synced_courses(user_email: str, firebase_db=Depends(get_firebase_db)):
+async def get_synced_courses(user_email: str, firebase_services: FirebaseServices = Depends(get_firebase_services)):
     """Get all courses that have been synced from Canvas to Notion."""
     try:
-        status_service = SyncStatusService(firebase_db)
+        status_service = SyncStatusService(firebase_services)
         return await status_service.get_synced_courses(user_email)
 
     except (DatabaseError, ValidationError) as e:
@@ -132,10 +139,10 @@ async def get_synced_courses(user_email: str, firebase_db=Depends(get_firebase_d
 
 
 @router.get("/get-assignments", response_model=SyncedAssignmentsResponse)
-async def get_synced_assignments(user_email: str, firebase_db=Depends(get_firebase_db)):
+async def get_synced_assignments(user_email: str, firebase_services: FirebaseServices = Depends(get_firebase_services)):
     """Get all assignments that have been synced from Canvas to Notion."""
     try:
-        status_service = SyncStatusService(firebase_db)
+        status_service = SyncStatusService(firebase_services)
         return await status_service.get_synced_assignments(user_email)
 
     except (DatabaseError, ValidationError) as e:
@@ -149,10 +156,10 @@ async def get_synced_assignments(user_email: str, firebase_db=Depends(get_fireba
 
 
 @router.get("/status", response_model=SyncStatusResponse)
-async def get_sync_status(user_email: str, firebase_db=Depends(get_firebase_db)):
+async def get_sync_status(user_email: str, firebase_services: FirebaseServices = Depends(get_firebase_services)):
     """Get overall sync status including course and assignment counts."""
     try:
-        status_service = SyncStatusService(firebase_db)
+        status_service = SyncStatusService(firebase_services)
         return await status_service.get_sync_status(user_email)
 
     except (DatabaseError, ValidationError) as e:
@@ -166,11 +173,21 @@ async def get_sync_status(user_email: str, firebase_db=Depends(get_firebase_db))
 
 
 @router.get("/logs", response_model=SyncLogResponse)
-async def get_sync_logs(user_email: str, limit: int = 20, firebase_db=Depends(get_firebase_db)):
+async def get_sync_logs(
+    user_email: str, limit: int = 20, firebase_services: FirebaseServices = Depends(get_firebase_services)
+):
     """Get sync logs for the user."""
     try:
-        log_service = SyncLogService(firebase_db)
-        return await log_service.get_sync_logs(user_email, limit)
+        # Get sync logs directly from Firebase
+        sync_logs = await firebase_services.get_sync_logs(user_email, limit)
+
+        return {
+            "success": True,
+            "message": f"Found {len(sync_logs)} sync logs",
+            "logs_count": len(sync_logs),
+            "logs": sync_logs,
+            "note": "Recent sync activity logs",
+        }
 
     except Exception as e:
         logger.error(f"Failed to get sync logs: {e}")
@@ -178,11 +195,21 @@ async def get_sync_logs(user_email: str, limit: int = 20, firebase_db=Depends(ge
 
 
 @router.get("/audit", response_model=AuditLogResponse)
-async def get_audit_logs(user_email: str, limit: int = 50, firebase_db=Depends(get_firebase_db)):
+async def get_audit_logs(
+    user_email: str, limit: int = 50, firebase_services: FirebaseServices = Depends(get_firebase_services)
+):
     """Get audit logs for the user."""
     try:
-        log_service = SyncLogService(firebase_db)
-        return await log_service.get_audit_logs(user_email, limit)
+        # Get audit logs directly from Firebase
+        audit_logs = await firebase_services.get_audit_logs(user_email, limit)
+
+        return {
+            "success": True,
+            "message": f"Found {len(audit_logs)} audit logs",
+            "logs_count": len(audit_logs),
+            "logs": audit_logs,
+            "note": "Recent user activity audit logs",
+        }
 
     except Exception as e:
         logger.error(f"Failed to get audit logs: {e}")

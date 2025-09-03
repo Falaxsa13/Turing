@@ -1,7 +1,7 @@
 from loguru import logger
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.firebase import get_firebase_db
+from app.core.dependencies import get_firebase_services, FirebaseServices
 from app.auth import get_current_user_email
 from app.core.exceptions import ExternalServiceError, ValidationError, DatabaseError
 from app.core.responses import success_response
@@ -51,12 +51,16 @@ async def test_canvas_connection(request: CanvasTestRequest):
 
 @router.post("/inspect", response_model=CanvasInspectionResponse)
 async def inspect_canvas_courses(
-    user_email: str = Depends(get_current_user_email), firebase_db=Depends(get_firebase_db)
+    user_email: str = Depends(get_current_user_email),
+    firebase_services: FirebaseServices = Depends(get_firebase_services),
 ):
     """Get detailed Canvas course structure including professor information."""
     try:
-        settings = await firebase_db.get_user_settings(user_email)
-        if not settings:
+        try:
+            settings_obj = await firebase_services.get_user_settings(user_email)
+            settings = settings_obj.model_dump()
+
+        except ValueError:
             raise DatabaseError("User not found. Please run /setup/init first.", operation="get_user")
 
         _require_credentials(settings)
@@ -85,12 +89,16 @@ async def inspect_canvas_courses(
 
 @router.get("/course-details/{course_id}")
 async def get_canvas_course_details(
-    course_id: int, user_email: str = Depends(get_current_user_email), firebase_db=Depends(get_firebase_db)
+    course_id: int,
+    user_email: str = Depends(get_current_user_email),
+    firebase_services: FirebaseServices = Depends(get_firebase_services),
 ):
     """Get detailed Canvas course information including sections and instructors."""
     try:
-        settings = await firebase_db.get_user_settings(user_email)
-        if not settings:
+        try:
+            settings_obj = await firebase_services.get_user_settings(user_email)
+            settings = settings_obj.model_dump()
+        except ValueError:
             raise DatabaseError("User not found", operation="get_user")
 
         _require_credentials(settings)

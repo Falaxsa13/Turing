@@ -1,9 +1,10 @@
-from app.core.exceptions import ValidationError, DatabaseError
-from app.utils.notion_helper import NotionWorkspaceManager
-from app.models.user_settings import UserSettings
-import logging
 from datetime import datetime
 from typing import List
+from loguru import logger
+
+from app.core.exceptions import ValidationError, DatabaseError
+from app.utils.notion_helper import NotionWorkspaceManager
+from app.models.user_settings import UserSettings, UserPreferences
 from app.schemas.sync import (
     SyncStatusResponse,
     SetupStatus,
@@ -14,8 +15,6 @@ from app.schemas.sync import (
     SyncedCoursesResponse,
     SyncedAssignmentsResponse,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class SyncStatusService:
@@ -56,7 +55,11 @@ class SyncStatusService:
         if user_email in self._notion_manager_cache:
             return self._notion_manager_cache[user_email]
 
-        user_settings = await self._get_validated_user_settings(user_email)
+        user_settings: UserSettings = await self._get_validated_user_settings(user_email)
+
+        if not user_settings.notion_token or not user_settings.notion_parent_page_id:
+            raise ValidationError("Notion credentials not configured. Please set Notion token and parent page ID.")
+
         notion_manager = NotionWorkspaceManager(user_settings.notion_token, user_settings.notion_parent_page_id)
         self._notion_manager_cache[user_email] = notion_manager
 

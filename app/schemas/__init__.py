@@ -9,13 +9,39 @@ from app.schemas.setup import (
     ProfessorDetectionResponse,
 )
 
+from app.schemas.canvas import (
+    AssignmentSubmissionType,
+    AssignmentWorkflowState,
+    AssignmentGradingType,
+    CanvasAssignmentDetails,
+    CanvasAssignmentGroup,
+    CanvasSubmissionInfo,
+    EnhancedAssignmentData,
+)
+
 from app.schemas.notion import (
-    NotionTestRequest,
     NotionEntryRequest,
     NotionDatabaseInfo,
     NotionWorkspaceResponse,
     NotionSchemaResponse,
     NotionEntryResponse,
+)
+
+from app.schemas.notion import (
+    NotionBlockType,
+    NotionRichText,
+    NotionBlockContent,
+    NotionParagraphBlock,
+    NotionHeadingBlock,
+    NotionCalloutBlock,
+    NotionToggleBlock,
+    NotionDividerBlock,
+    NotionBulletedListBlock,
+    NotionNumberedListBlock,
+    NotionCodeBlock,
+    NotionBookmarkBlock,
+    NotionAssignmentFormatting,
+    NotionRichTextBuilder,
 )
 
 from app.schemas.sync import (
@@ -46,13 +72,34 @@ __all__ = [
     "SetupStatusResponse",
     "CanvasTestResponse",
     "ProfessorDetectionResponse",
-    # Notion schemas
-    "NotionTestRequest",
+    # Enhanced Canvas schemas
+    "AssignmentSubmissionType",
+    "AssignmentWorkflowState",
+    "AssignmentGradingType",
+    "CanvasAssignmentDetails",
+    "CanvasAssignmentGroup",
+    "CanvasSubmissionInfo",
+    "EnhancedAssignmentData",
     "NotionEntryRequest",
     "NotionDatabaseInfo",
     "NotionWorkspaceResponse",
     "NotionSchemaResponse",
     "NotionEntryResponse",
+    # Enhanced Notion schemas
+    "NotionBlockType",
+    "NotionRichText",
+    "NotionBlockContent",
+    "NotionParagraphBlock",
+    "NotionHeadingBlock",
+    "NotionCalloutBlock",
+    "NotionToggleBlock",
+    "NotionDividerBlock",
+    "NotionBulletedListBlock",
+    "NotionNumberedListBlock",
+    "NotionCodeBlock",
+    "NotionBookmarkBlock",
+    "NotionAssignmentFormatting",
+    "NotionRichTextBuilder",
     # Sync schemas
     "SyncCourseInfo",
     "SyncFailedCourse",

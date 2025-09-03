@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, status
 from app.auth import authenticate_user_with_firebase, get_current_user
-from app.firebase import get_firebase_db
+from app.core.dependencies import get_firebase_services, FirebaseServices
 from app.core.exceptions import AuthenticationError, ExternalServiceError
 from app.schemas.auth import (
     FirebaseConfigResponse,
@@ -10,18 +10,18 @@ from app.schemas.auth import (
     LogoutRequest,
     LogoutResponse,
 )
-from app.models.user import AuthenticatedUser, UserProfile
+from app.models.user import AuthenticatedUser, UserProfile, UserPreferences, UserSettings
 from datetime import datetime, timezone
 from app.core.config import settings
 from loguru import logger
-import asyncio
-
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login_with_firebase(request: FirebaseLoginRequest, firebase_db=Depends(get_firebase_db)):
+async def login_with_firebase(
+    request: FirebaseLoginRequest, firebase_services: FirebaseServices = Depends(get_firebase_services)
+):
     """
     Authenticate user with Firebase ID token (Google OAuth).
 
@@ -30,7 +30,7 @@ async def login_with_firebase(request: FirebaseLoginRequest, firebase_db=Depends
     """
     try:
         # Authenticate with Firebase
-        auth = await authenticate_user_with_firebase(request.id_token, firebase_db)
+        auth = await authenticate_user_with_firebase(request.id_token, firebase_services)
 
         if not auth:
             raise AuthenticationError("Firebase authentication failed", user_id=None)
@@ -56,14 +56,14 @@ async def login_with_firebase(request: FirebaseLoginRequest, firebase_db=Depends
 async def logout(
     request: LogoutRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
-    firebase_db=Depends(get_firebase_db),
+    firebase_services: FirebaseServices = Depends(get_firebase_services),
 ):
     """
     Log a logout action (tokens are stateless; frontend should delete it).
     """
     try:
         # Log logout action
-        await firebase_db.add_audit_log(
+        await firebase_services.add_audit_log(
             user_email=current_user.user_email,
             action="logout",
             target_id=current_user.user_id,
@@ -89,20 +89,21 @@ async def logout(
 
 @router.get("/me", response_model=UserProfile)
 async def get_current_user_info(
-    current_user: AuthenticatedUser = Depends(get_current_user), firebase_db=Depends(get_firebase_db)
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    firebase_services: FirebaseServices = Depends(get_firebase_services),
 ):
     """Get current authenticated user information."""
 
     try:
         user_email = current_user.user_email
 
-        user_settings, user_preferences = await asyncio.gather(
-            firebase_db.get_user_settings(user_email),
-            firebase_db.get_user_preferences(user_email),
-        )
+        # Get user settings and preferences
+        user_settings: UserSettings = await firebase_services.get_user_settings(user_email)
 
-        def _has(cfg: dict | None, *keys: str) -> bool:
-            return bool(cfg and all(cfg.get(k) for k in keys))
+        user_preferences: UserPreferences = await firebase_services.get_user_preferences(user_email)
+
+        def _has(cfg: UserSettings | None, *keys: str) -> bool:
+            return bool(cfg and all(getattr(cfg, k) for k in keys))
 
         setup_status = {
             "has_canvas": _has(user_settings, "canvas_base_url", "canvas_pat"),

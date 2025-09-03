@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.auth import get_current_user_email
 from app.core.exceptions import DatabaseError, ExternalServiceError, ValidationError
-from app.firebase import get_firebase_db
+from app.core.dependencies import get_firebase_services, FirebaseServices
 from app.schemas.notion import (
     NotionEntryRequest,
     NotionEntryResponse,
@@ -22,20 +22,22 @@ router = APIRouter(prefix="/notion", tags=["notion"])
 
 
 async def get_notion_credentials(
-    user_email: str = Depends(get_current_user_email), firebase_db=Depends(get_firebase_db)
+    user_email: str = Depends(get_current_user_email),
+    firebase_services: FirebaseServices = Depends(get_firebase_services),
 ) -> Dict[str, Any]:
     """Get validated Notion credentials for authenticated user"""
-    settings = await firebase_db.get_user_settings(user_email)
-    if not settings:
+    try:
+        settings = await firebase_services.get_user_settings(user_email)
+    except ValueError:
         raise DatabaseError("User not found. Please run /setup/init first.", operation="get_user")
 
-    if not (settings.get("notion_token") and settings.get("notion_parent_page_id")):
+    if not (settings.notion_token and settings.notion_parent_page_id):
         raise ValidationError(
             "Notion credentials not configured. Please set Notion token and parent page ID.",
             field="notion_credentials",
         )
 
-    return {"notion_token": settings["notion_token"], "notion_parent_page_id": settings["notion_parent_page_id"]}
+    return {"notion_token": settings.notion_token, "notion_parent_page_id": settings.notion_parent_page_id}
 
 
 @router.post("/test", response_model=NotionWorkspaceResponse)

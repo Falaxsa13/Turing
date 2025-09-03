@@ -12,7 +12,7 @@ from loguru import logger
 import os
 from google.cloud.firestore import Client
 
-from app.config import settings
+from app.core.config import settings
 from .constants import (
     SERVICE_ACCOUNT_PATH,
     DUMMY_PROJECT_ID,
@@ -90,7 +90,7 @@ class FirebaseManager:
         try:
             logger.info("Using service account key file for Firebase initialization")
             cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
-            firebase_admin.initialize_app(cred, {"projectId": settings.firebase_project_id})
+            firebase_admin.initialize_app(cred)
             logger.info("✅ Firebase initialized with service account key")
             return True
         except Exception as e:
@@ -104,12 +104,12 @@ class FirebaseManager:
         Returns:
             True if successful, False otherwise
         """
-        if settings.firebase_project_id == DUMMY_PROJECT_ID:
+        if settings.firebase.project_id == DUMMY_PROJECT_ID:
             return False
 
         try:
             logger.info("Attempting Firebase initialization with Application Default Credentials")
-            firebase_admin.initialize_app(credentials.ApplicationDefault(), {"projectId": settings.firebase_project_id})
+            firebase_admin.initialize_app(credentials.ApplicationDefault(), {"projectId": settings.firebase.project_id})
             logger.info("✅ Firebase initialized with Application Default Credentials")
             return True
         except Exception as e:

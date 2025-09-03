@@ -13,7 +13,7 @@ from app.api import canvas_router, health_router, notion_router, setup_router, s
 from app.api.auth import router as auth_router
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.firebase import firebase_manager
+from app.core.dependencies import get_firebase_manager
 
 # Setup logging
 setup_logging(log_level=settings.log_level, log_file=settings.log_file)
@@ -27,7 +27,8 @@ async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown."""
     # Startup
     try:
-        if firebase_manager.db:
+        firebase_manager = get_firebase_manager()
+        if firebase_manager.get_database():
             log.info("Firebase initialized successfully")
         else:
             log.warning("Firebase initialization failed")
@@ -88,10 +89,11 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    firebase_manager = get_firebase_manager()
     return {
         "status": "healthy",
         "environment": settings.app_env,
-        "firebase_available": firebase_manager.firebase_available,
+        "firebase_available": firebase_manager.is_available(),
     }
 
 

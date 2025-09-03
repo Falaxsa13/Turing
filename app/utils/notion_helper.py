@@ -82,7 +82,7 @@ class NotionWorkspaceManager:
             for db in databases:
                 if db["title"].lower() == name.lower():
                     self._database_cache[name] = db["id"]
-                    logger.info(f"Found existing database: {name} -> {db['id']}")
+                    # logger.info(f"Found existing database: {name} -> {db['id']}")
                     return db["id"]
 
             logger.warning(f"Database '{name}' not found in workspace")
@@ -385,59 +385,75 @@ class NotionWorkspaceManager:
                 logger.warning("Courses database not found")
                 return []
 
-            # Query all pages in the Courses database
-            response = await self.client.databases.query(database_id=database_id, page_size=100)
-
+            # Query all pages in the Courses database with proper pagination
             courses = []
-            for page in response.get("results", []):
-                # Extract course properties
-                properties = page.get("properties", {})
+            has_more = True
+            next_cursor = None
 
-                # Look for Canvas course ID in properties
-                canvas_course_id = None
-                notion_page_id = page.get("id")
-                title = "Untitled Course"
-                course_code = ""
+            while has_more:
+                query_params = {"database_id": database_id, "page_size": 100}
+                if next_cursor:
+                    query_params["start_cursor"] = next_cursor
 
-                # Extract title
-                for prop_name, prop_data in properties.items():
-                    if prop_data.get("type") == "title":
-                        title_content = prop_data.get("title", [])
-                        if title_content:
-                            title = title_content[0].get("text", {}).get("content", "Untitled Course")
-                        break
+                response = await self.client.databases.query(**query_params)
 
-                # Extract course code and look for Canvas course ID in contact field
-                for prop_name, prop_data in properties.items():
-                    if prop_data.get("type") == "rich_text":
-                        rich_text_content = prop_data.get("rich_text", [])
-                        if rich_text_content:
-                            text_value = rich_text_content[0].get("text", {}).get("content", "")
+                for page in response.get("results", []):
+                    # Extract course properties
+                    properties = page.get("properties", {})
 
-                            if prop_name.lower() in ["course_code", "course code", "coursecode"]:
-                                course_code = text_value
+                    # Look for Canvas course ID in properties
+                    canvas_course_id = None
+                    notion_page_id = page.get("id")
+                    title = "Untitled Course"
+                    course_code = ""
 
-                    elif prop_data.get("type") == "phone_number":
-                        # Canvas course ID is stored in the contact/phone_number field
-                        phone_value = prop_data.get("phone_number", "")
-                        if phone_value and "Canvas ID:" in phone_value:
-                            # Extract the Canvas ID from format "Canvas ID: 123456"
-                            try:
-                                canvas_course_id = phone_value.split("Canvas ID:")[1].strip()
-                                logger.info(f"Found Canvas course ID: {canvas_course_id} for course: {title}")
-                            except (IndexError, AttributeError):
-                                logger.warning(f"Could not parse Canvas ID from contact field: {phone_value}")
+                    # Extract title
+                    for prop_name, prop_data in properties.items():
+                        if prop_data.get("type") == "title":
+                            title_content = prop_data.get("title", [])
+                            if title_content:
+                                title = title_content[0].get("text", {}).get("content", "Untitled Course")
+                            break
 
-                # Only include courses that have Canvas course IDs
-                if canvas_course_id:
-                    courses.append(
-                        {
-                            "notion_page_id": notion_page_id,
-                            "canvas_course_id": canvas_course_id,
-                            "title": title,
-                            "course_code": course_code,
-                        }
-                    )
+                    # Extract course code and look for Canvas course ID in contact field
+                    for prop_name, prop_data in properties.items():
+                        if prop_data.get("type") == "rich_text":
+                            rich_text_content = prop_data.get("rich_text", [])
+                            if rich_text_content:
+                                text_value = rich_text_content[0].get("text", {}).get("content", "")
+
+                                if prop_name.lower() in ["course_code", "course code", "coursecode"]:
+                                    course_code = text_value
+
+                        elif prop_data.get("type") == "phone_number":
+                            # Canvas course ID is stored in the contact/phone_number field
+                            phone_value = prop_data.get("phone_number", "")
+                            if phone_value and "Canvas ID:" in phone_value:
+                                # Extract the Canvas ID from format "Canvas ID: 123456"
+                                try:
+                                    canvas_course_id = phone_value.split("Canvas ID:")[1].strip()
+                                    logger.info(f"Found Canvas course ID: {canvas_course_id} for course: {title}")
+                                except (IndexError, AttributeError):
+                                    logger.warning(f"Could not parse Canvas ID from contact field: {phone_value}")
+
+                    # Only include courses that have Canvas course IDs
+                    if canvas_course_id:
+                        try:
+                            # Convert canvas_course_id to integer and create NotionCourseInfo object
+                            course_info = NotionCourseInfo(
+                                notion_page_id=notion_page_id,
+                                canvas_course_id=int(canvas_course_id),
+                                title=title,
+                                course_code=course_code,
+                            )
+                            courses.append(course_info)
+                        except ValueError as e:
+                            logger.warning(f"Invalid Canvas course ID '{canvas_course_id}' for course '{title}': {e}")
+                            continue
+
+                # Update pagination variables
+                has_more = response.get("has_more", False)
+                next_cursor = response.get("next_cursor")
 
             logger.info(f"Retrieved {len(courses)} courses with Canvas IDs from Notion")
             return courses
@@ -455,47 +471,64 @@ class NotionWorkspaceManager:
                 logger.warning("Assignments/Exams database not found")
                 return []
 
-            # Query all pages in the Assignments/Exams database
-            response = await self.client.databases.query(database_id=database_id, page_size=100)
-
+            # Query all pages in the Assignments/Exams database with proper pagination
             assignments = []
-            for page in response.get("results", []):
-                properties = page.get("properties", {})
+            has_more = True
+            next_cursor = None
 
-                notion_page_id = page.get("id")
-                title = "Untitled Assignment"
-                canvas_assignment_id = None
+            while has_more:
+                query_params = {"database_id": database_id, "page_size": 100}
+                if next_cursor:
+                    query_params["start_cursor"] = next_cursor
 
-                # Extract title
-                for prop_name, prop_data in properties.items():
-                    if prop_data.get("type") == "title":
-                        title_content = prop_data.get("title", [])
-                        if title_content:
-                            title = title_content[0].get("text", {}).get("content", "Untitled Assignment")
-                        break
+                response = await self.client.databases.query(**query_params)
 
-                # Extract Canvas assignment ID from weighting field
-                for prop_name, prop_data in properties.items():
-                    if prop_data.get("type") == "number" and prop_name.lower() in ["weighting", "weight"]:
-                        weight_value = prop_data.get("number")
-                        if weight_value and weight_value > 1000:  # Canvas assignment IDs are typically large numbers
-                            canvas_assignment_id = str(int(weight_value))
-                            logger.debug(
-                                f"Found Canvas assignment ID {canvas_assignment_id} in weighting field for assignment: {title}"
-                            )
+                for page in response.get("results", []):
+                    properties = page.get("properties", {})
+
+                    notion_page_id = page.get("id")
+                    title = "Untitled Assignment"
+                    canvas_assignment_id = None
+
+                    # Extract title
+                    for prop_name, prop_data in properties.items():
+                        if prop_data.get("type") == "title":
+                            title_content = prop_data.get("title", [])
+                            if title_content:
+                                title = title_content[0].get("text", {}).get("content", "Untitled Assignment")
                             break
 
-                # Only include assignments that have Canvas assignment IDs (for duplicate detection)
-                if canvas_assignment_id:
-                    assignments.append(
-                        {
-                            "notion_page_id": notion_page_id,
-                            "canvas_assignment_id": canvas_assignment_id,
-                            "title": title,
-                        }
-                    )
-                else:
-                    logger.debug(f"Assignment '{title}' has no Canvas ID - may be manually created")
+                    # Extract Canvas assignment ID from weighting field
+                    for prop_name, prop_data in properties.items():
+                        if prop_data.get("type") == "number" and prop_name.lower() in ["weighting", "weight"]:
+                            weight_value = prop_data.get("number")
+                            if (
+                                weight_value and weight_value > 1000
+                            ):  # Canvas assignment IDs are typically large numbers
+                                canvas_assignment_id = str(int(weight_value))
+                                logger.debug(
+                                    f"Found Canvas assignment ID {canvas_assignment_id} in weighting field for assignment: {title}"
+                                )
+                                break
+
+                    # Only include assignments that have Canvas assignment IDs (for duplicate detection)
+                    if canvas_assignment_id:
+                        try:
+                            # Create NotionAssignmentInfo object
+                            assignment_info = NotionAssignmentInfo(
+                                notion_page_id=notion_page_id, canvas_assignment_id=canvas_assignment_id, title=title
+                            )
+                            assignments.append(assignment_info)
+                        except Exception as e:
+                            logger.warning(f"Failed to create assignment info for '{title}': {e}")
+                            continue
+                    else:
+                        logger.debug(f"Assignment '{title}' has no Canvas ID - may be manually created")
+
+                # Update pagination variables
+                has_more = response.get("has_more", False)
+                next_cursor = response.get("next_cursor")
+                # Removed verbose logging for performance
 
             logger.info(f"Found {len(assignments)} existing assignments with Canvas IDs")
             return assignments
@@ -540,40 +573,57 @@ class NotionWorkspaceManager:
                 logger.warning("Assignments/Exams database not found")
                 return 0
 
-            # Query all assignments in the database
-            response = await self.client.databases.query(database_id=database_id, page_size=100)
-
+            # Query all assignments in the database with proper pagination
             deleted_count = 0
-            for page in response.get("results", []):
-                properties = page.get("properties", {})
-                notion_page_id = page.get("id")
+            has_more = True
+            next_cursor = None
 
-                # Check if this assignment belongs to one of the specified courses
-                # Look for relation to courses
-                assignment_belongs_to_course = False
-                assignment_title = "Unknown"
+            while has_more:
+                query_params = {"database_id": database_id, "page_size": 100}
+                if next_cursor:
+                    query_params["start_cursor"] = next_cursor
 
-                for prop_name, prop_data in properties.items():
-                    if prop_data.get("type") == "title":
-                        title_content = prop_data.get("title", [])
-                        if title_content:
-                            assignment_title = title_content[0].get("text", {}).get("content", "Unknown")
-                    elif prop_data.get("type") == "relation":
-                        # Check if this relation field links to any of our courses
-                        relations = prop_data.get("relation", [])
-                        for relation in relations:
-                            if relation.get("id") in course_notion_ids:
-                                assignment_belongs_to_course = True
-                                break
+                response = await self.client.databases.query(**query_params)
 
-                if assignment_belongs_to_course:
-                    try:
-                        # Archive (delete) the assignment
-                        await self.client.pages.update(page_id=notion_page_id, archived=True)
-                        deleted_count += 1
-                        logger.info(f"Deleted assignment: {assignment_title}")
-                    except Exception as e:
-                        logger.error(f"Failed to delete assignment {assignment_title}: {e}")
+                for page in response.get("results", []):
+                    properties = page.get("properties", {})
+                    notion_page_id = page.get("id")
+
+                    # Check if this assignment belongs to one of the specified courses
+                    # Look for relation to courses
+                    assignment_belongs_to_course = False
+                    assignment_title = "Unknown Assignment"
+
+                    # Extract assignment title
+                    for prop_name, prop_data in properties.items():
+                        if prop_data.get("type") == "title":
+                            title_content = prop_data.get("title", [])
+                            if title_content:
+                                assignment_title = title_content[0].get("text", {}).get("content", "Unknown Assignment")
+                            break
+
+                    # Check if this assignment is related to any of the specified courses
+                    for prop_name, prop_data in properties.items():
+                        if prop_data.get("type") == "relation":
+                            # Check if this relation field links to any of our courses
+                            relations = prop_data.get("relation", [])
+                            for relation in relations:
+                                if relation.get("id") in course_notion_ids:
+                                    assignment_belongs_to_course = True
+                                    break
+
+                    if assignment_belongs_to_course:
+                        try:
+                            # Archive (delete) the assignment
+                            await self.client.pages.update(page_id=notion_page_id, archived=True)
+                            deleted_count += 1
+                            logger.info(f"Deleted assignment: {assignment_title}")
+                        except Exception as e:
+                            logger.error(f"Failed to delete assignment {assignment_title}: {e}")
+
+                # Update pagination variables
+                has_more = response.get("has_more", False)
+                next_cursor = response.get("next_cursor")
 
             logger.info(f"Deleted {deleted_count} assignments from specified courses")
             return deleted_count
@@ -636,60 +686,7 @@ async def get_database_schemas(notion_token: str, parent_page_id: str) -> Dict:
         return {"success": False, "message": f"Failed to get schemas: {str(e)}", "error": str(e)}
 
 
-async def demo_add_entries(notion_token: str, parent_page_id: str) -> Dict:
-    """Demo function to add basic entries to all 3 databases"""
-    manager = NotionWorkspaceManager(notion_token, parent_page_id)
-
-    try:
-        results = {}
-
-        # Add demo course
-        course_result = await manager.add_course_entry(
-            {
-                "title": "Demo Course from Canvas Sync"
-                # TODO: Add your actual course data structure
-            }
-        )
-        results["course"] = course_result
-
-        # Add demo assignment
-        assignment_result = await manager.add_assignment_entry(
-            {
-                "title": "Demo Assignment from Canvas Sync"
-                # TODO: Add your actual assignment data structure
-            }
-        )
-        results["assignment"] = assignment_result
-
-        # Add demo note
-        note_result = await manager.add_note_entry(
-            {
-                "title": "Demo Note from Canvas Sync"
-                # TODO: Add your actual note data structure
-            }
-        )
-        results["note"] = note_result
-
-        success_count = sum(1 for result in results.values() if result is not None)
-
-        return {
-            "success": True,
-            "message": f"Successfully added {success_count}/3 demo entries",
-            "results": results,
-            "note": "Entries now use actual database schemas automatically",
-        }
-
-    except Exception as e:
-        logger.error(f"Failed to add demo entries: {e}")
-        return {"success": False, "message": f"Failed to add entries: {str(e)}", "error": str(e)}
-
-
 # Legacy functions for backward compatibility
 async def get_notion_workspace_info(notion_token: str, parent_page_id: str) -> Dict:
     """Get information about the Notion workspace structure"""
     return await test_existing_databases(notion_token, parent_page_id)
-
-
-async def initialize_canvas_notion_workspace(notion_token: str, parent_page_id: str) -> Dict:
-    """Test existing databases instead of creating new ones"""
-    return await demo_add_entries(notion_token, parent_page_id)

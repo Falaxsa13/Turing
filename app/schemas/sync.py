@@ -84,7 +84,11 @@ class AssignmentSyncResponse(BaseModel):
 
 
 class AssignmentSyncRequest(BaseModel):
-    user_email: str
+    user_email: str = Field(description="User email")
+    include_submissions: bool = Field(default=True, description="Whether to include submission details")
+    include_statistics: bool = Field(default=True, description="Whether to include score statistics")
+    include_rubrics: bool = Field(default=True, description="Whether to include assignment rubrics")
+    include_assignment_groups: bool = Field(default=True, description="Whether to include assignment group information")
 
 
 # Sync Status Models - Updated to match actual data structure

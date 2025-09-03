@@ -10,7 +10,7 @@ from loguru import logger
 
 from .manager import FirebaseManager
 from .constants import USER_SETTINGS_COLLECTION, USER_PREFERENCES_COLLECTION
-from app.models.user_settings import UserSettings
+from app.models.user_settings import UserPreferences, UserSettings
 
 
 class FirebaseUserService:
@@ -102,7 +102,7 @@ class FirebaseUserService:
             logger.error(f"Failed to update user settings for {user_email}: {e}")
             return False
 
-    async def get_user_preferences(self, user_email: str) -> Optional[Dict[str, Any]]:
+    async def get_user_preferences(self, user_email: str) -> Optional[UserPreferences]:
         """
         Get user preferences from Firestore.
 
@@ -132,7 +132,7 @@ class FirebaseUserService:
                     return None
 
                 data["user_email"] = user_email
-                return data
+                return UserPreferences(**data)
 
             return None
 
@@ -140,20 +140,12 @@ class FirebaseUserService:
             logger.error(f"Failed to get user preferences for {user_email}: {e}")
             return None
 
-    async def save_user_preferences(self, user_email: str, preferences: Dict[str, Any]) -> bool:
-        """
-        Save user preferences to Firestore.
+    async def save_user_preferences(self, user_email: str, preferences: UserPreferences) -> bool:
+        """Save user preferences to Firestore."""
 
-        Args:
-            user_email: User's email address (used as document ID)
-            preferences: Preferences data to save
-
-        Returns:
-            True if successful, False otherwise
-        """
         if not self.firebase_manager.is_available():
             logger.warning(f"Firebase not available, skipping save user preferences for {user_email}")
-            return True  # Return True for development mode
+            return False
 
         if self.db is None:
             logger.warning("Firebase database is not available")
@@ -161,13 +153,12 @@ class FirebaseUserService:
 
         try:
             # Remove user_email from preferences if present (it's the document ID)
-            preferences = preferences.copy()  # Avoid modifying original
-            preferences.pop("user_email", None)
+            preferences_data = preferences.model_dump()  # Avoid modifying original
+            preferences_data.pop("user_email", None)
 
             doc_ref = self.db.collection(USER_PREFERENCES_COLLECTION).document(user_email)
-            doc_ref.set(preferences, merge=True)
+            doc_ref.set(preferences_data, merge=True)
 
-            logger.info(f"User preferences saved for {user_email}")
             return True
 
         except Exception as e:

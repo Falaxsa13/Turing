@@ -8,7 +8,7 @@ from loguru import logger
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.exceptions import DatabaseError, ExternalServiceError, ValidationError
-from app.firebase import get_firebase_db
+from app.core.dependencies import get_firebase_services, FirebaseServices
 from app.models.user_settings import UserSettings
 from app.schemas.setup import CanvasPATRequest, InitSetupRequest, SetupResponse, SetupStatusResponse
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/setup", tags=["setup"])
 
 
 @router.post("/init", response_model=SetupResponse)
-async def init_setup(request: InitSetupRequest, firebase_db=Depends(get_firebase_db)):
+async def init_setup(request: InitSetupRequest, firebase_services: FirebaseServices = Depends(get_firebase_services)):
     """Initialize user setup with Canvas and Notion credentials."""
     try:
         user_email = request.user_email
@@ -31,21 +31,21 @@ async def init_setup(request: InitSetupRequest, firebase_db=Depends(get_firebase
         }
 
         # Check if user already exists
-        existing_user = await firebase_db.get_user_settings(user_email)
-        if not existing_user:
+        try:
+            existing_user = await firebase_services.get_user_settings(user_email)
+            logger.info(f"Updating existing user: {user_email}")
+        except ValueError:
             user_data["created_at"] = now
             logger.info(f"Creating new user: {user_email}")
-        else:
-            logger.info(f"Updating existing user: {user_email}")
 
         # Create or update user settings
-        success = await firebase_db.create_or_update_user_settings(user_email, user_data)
+        success = await firebase_services.create_or_update_user_settings(user_email, user_data)
 
         if not success:
             raise DatabaseError("Failed to save user settings", operation="save_user", collection="user_settings")
 
         # Log the setup action
-        await firebase_db.add_audit_log(
+        await firebase_services.add_audit_log(
             user_email=user_email,
             action="setup_init",
             target_id=user_email,
@@ -73,12 +73,15 @@ async def init_setup(request: InitSetupRequest, firebase_db=Depends(get_firebase
 
 
 @router.post("/canvas/pat")
-async def save_canvas_pat(request: CanvasPATRequest, user_email: str, firebase_db=Depends(get_firebase_db)):
+async def save_canvas_pat(
+    request: CanvasPATRequest, user_email: str, firebase_services: FirebaseServices = Depends(get_firebase_services)
+):
     """Save Canvas Personal Access Token for the user."""
     try:
         # Get existing user settings
-        user_settings = await firebase_db.get_user_settings(user_email)
-        if not user_settings:
+        try:
+            user_settings = await firebase_services.get_user_settings(user_email)
+        except ValueError:
             raise DatabaseError(
                 "User not found. Please run /setup/init first.", operation="get_user", collection="user_settings"
             )
@@ -89,13 +92,13 @@ async def save_canvas_pat(request: CanvasPATRequest, user_email: str, firebase_d
             "updated_at": datetime.now(timezone.utc),
         }
 
-        success = await firebase_db.create_or_update_user_settings(user_email, user_data)
+        success = await firebase_services.create_or_update_user_settings(user_email, user_data)
 
         if not success:
             raise DatabaseError("Failed to save Canvas PAT", operation="save_canvas_pat", collection="user_settings")
 
         # Log the action
-        await firebase_db.add_audit_log(
+        await firebase_services.add_audit_log(
             user_email=user_email, action="canvas_pat_saved", target_id=user_email, metadata={"has_canvas_pat": True}
         )
 
@@ -115,11 +118,11 @@ async def save_canvas_pat(request: CanvasPATRequest, user_email: str, firebase_d
 
 
 @router.get("/me", response_model=SetupStatusResponse)
-async def get_setup_status(user_email: str, firebase_db=Depends(get_firebase_db)):
+async def get_setup_status(user_email: str, firebase_services: FirebaseServices = Depends(get_firebase_services)):
     """Get setup status for the user."""
     try:
         # Get user settings
-        user_settings: UserSettings = await firebase_db.get_user_settings(user_email)
+        user_settings: UserSettings = await firebase_services.get_user_settings(user_email)
 
         # Check what's configured
         has_canvas = bool(user_settings.canvas_base_url and user_settings.canvas_pat)

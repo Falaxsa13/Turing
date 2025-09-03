@@ -7,7 +7,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from app.core.config import settings
-from app.firebase import firebase_manager, get_firebase_db
+from app.core.dependencies import get_firebase_services, FirebaseServices
 from app.models.user import User, AuthenticatedUser
 from loguru import logger
 from typing import Optional, Dict, Any
@@ -44,17 +44,16 @@ async def verify_firebase_token(id_token: str) -> Optional[Dict[str, Any]]:
     """Verify Firebase ID token and return user info"""
     try:
         # Run Firebase token verification in a thread since it's synchronous
+        firebase_services = get_firebase_services()
         loop = asyncio.get_event_loop()
-        decoded_token = await loop.run_in_executor(None, firebase_manager.verify_firebase_token, id_token)
+        decoded_token = await loop.run_in_executor(None, firebase_services.verify_firebase_token, id_token)
         return decoded_token
     except Exception as e:
         logger.error(f"Firebase token verification failed: {e}")
         return None
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security), firebase_db=Depends(get_firebase_db)
-) -> AuthenticatedUser:
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> AuthenticatedUser:
     """Get current authenticated user from JWT token"""
 
     credentials_exception = HTTPException(
@@ -107,7 +106,7 @@ async def get_current_user_email(current_user: AuthenticatedUser = Depends(get_c
 
 
 async def authenticate_user_with_firebase(
-    id_token: str, firebase_db=Depends(get_firebase_db)
+    id_token: str, firebase_services: FirebaseServices = Depends(get_firebase_services)
 ) -> Optional[Dict[str, Any]]:
     """Authenticate user with Firebase ID token and create/update user settings"""
     try:
@@ -126,15 +125,16 @@ async def authenticate_user_with_firebase(
             return None
 
         # Check if user settings exist, create if not
-        user_settings = await firebase_db.get_user_settings(user_email)
-        if not user_settings:
+        try:
+            user_settings = await firebase_services.get_user_settings(user_email)
+        except ValueError:
             # Create new user settings
             now = datetime.utcnow()
             user_data = {
                 "created_at": now,
                 "updated_at": now,
             }
-            await firebase_db.create_or_update_user_settings(user_email, user_data)
+            await firebase_services.create_or_update_user_settings(user_email, user_data)
             logger.info(f"Created new user settings for {user_email}")
 
         # Create JWT token for the user
@@ -144,7 +144,7 @@ async def authenticate_user_with_firebase(
         )
 
         # Log authentication
-        await firebase_db.add_audit_log(
+        await firebase_services.add_audit_log(
             user_email=user_email,
             action="login",
             target_id=user_id,
